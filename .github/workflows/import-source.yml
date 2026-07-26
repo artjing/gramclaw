@@ -1,0 +1,28 @@
+name: Import Gramclaw source
+
+on:
+  push:
+    paths:
+      - gramclaw-source-public.zip
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand source archive
+        run: |
+          unzip -o gramclaw-source-public.zip
+          rm gramclaw-source-public.zip
+          rm .github/workflows/import-source.yml
+          rmdir --ignore-fail-on-non-empty .github/workflows .github || true
+      - name: Commit source tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Import Gramclaw source"
+          git push
