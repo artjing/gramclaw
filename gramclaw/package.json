@@ -1,0 +1,32 @@
+{
+  "name": "gramclaw",
+  "version": "1.0.0",
+  "description": "Local-first Instagram memory: archives, posts, stories, DMs, saves, likes, search, and agent-ready JSON.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "gramclaw": "bin/gramclaw.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "web/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/gramclaw.mjs",
+    "test": "node --test test/*.test.js",
+    "smoke": "node bin/gramclaw.mjs --home ./.smoke-home init --demo --json && node bin/gramclaw.mjs --home ./.smoke-home search posts studio --json && node bin/gramclaw.mjs --home ./.smoke-home graph summary --json"
+  },
+  "dependencies": {
+    "@steipete/sweet-cookie": "^0.4.0",
+    "better-sqlite3": "^13.0.1",
+    "commander": "^15.0.0",
+    "extract-zip": "^2.0.1",
+    "image-size": "^2.0.2"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

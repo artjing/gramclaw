@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Gramclaw — Local Instagram memory</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">g</div>
+          <div><strong>gramclaw</strong><span>local memory</span></div>
+        </div>
+        <nav id="nav" aria-label="Workspace">
+          <button class="nav-item active" data-view="home"><span>⌂</span>Home</button>
+          <button class="nav-item" data-view="inbox"><span>↘</span>Inbox <em id="inbox-count">0</em></button>
+          <button class="nav-item" data-view="saved"><span>◇</span>Saved</button>
+          <button class="nav-item" data-view="liked"><span>♡</span>Liked</button>
+          <button class="nav-item" data-view="stories"><span>◉</span>Stories</button>
+          <button class="nav-item" data-view="dms"><span>↗</span>Messages</button>
+          <button class="nav-item" data-view="network"><span>⌘</span>Network</button>
+          <button class="nav-item" data-view="insights"><span>⌁</span>Insights</button>
+        </nav>
+        <div class="sidebar-foot">
+          <button id="theme-toggle" class="icon-button" aria-label="Toggle theme">◐</button>
+          <div class="privacy-chip"><i></i>On this Mac</div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="view-eyebrow">Personal archive</p>
+            <h1 id="view-title">Home</h1>
+          </div>
+          <div class="top-actions">
+            <label class="search-box">
+              <span>⌕</span>
+              <input id="search" type="search" placeholder="Search everything" autocomplete="off" />
+              <kbd>⌘ K</kbd>
+            </label>
+            <button id="sync-button" class="sync-button"><span>↻</span>Sync</button>
+          </div>
+        </header>
+
+        <section id="summary-strip" class="summary-strip" aria-label="Workspace summary"></section>
+        <section id="content" class="content" aria-live="polite">
+          <div class="loading-state"><div class="loader"></div><p>Opening your local memory…</p></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="detail-dialog">
+      <button class="dialog-close" aria-label="Close">×</button>
+      <div id="dialog-content"></div>
+    </dialog>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
