@@ -3,7 +3,7 @@ name: Import Gramclaw source
 on:
   push:
     paths:
-      - gramclaw-source-public.zip
+      - gramclaw-source.ready
 
 permissions:
   contents: write
@@ -15,8 +15,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Expand source archive
         run: |
-          unzip -o gramclaw-source-public.zip
-          rm gramclaw-source-public.zip
+          cat .github/import-parts/*.b64 | base64 --decode > /tmp/gramclaw-source.zip
+          unzip -o /tmp/gramclaw-source.zip
+          rm gramclaw-source.ready
+          rm -rf .github/import-parts
           rm .github/workflows/import-source.yml
           rmdir --ignore-fail-on-non-empty .github/workflows .github || true
       - name: Commit source tree
