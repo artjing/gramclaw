@@ -13,7 +13,7 @@ application lives in `gramclaw/`.
 Node.js 22.13 or newer is required.
 
 ```bash
-npm install -g ./gramclaw-1.0.0.tgz
+npm install -g ./gramclaw-1.1.0.tgz
 gramclaw init --demo
 gramclaw serve --open
 ```
@@ -26,7 +26,8 @@ gramclaw serve --open
 ```
 
 See `gramclaw/README.md` for archive import, live adapters, guarded publishing,
-media caching, backup, and complete CLI documentation.
+private media analysis, visual search, smart Saved collections, boards, media
+caching, backup, and complete CLI documentation.
 
 ## Public site
 
