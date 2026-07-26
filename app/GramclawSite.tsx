@@ -16,14 +16,11 @@ import {
   FileArchive,
   GitBranch,
   Heart,
-  Inbox,
   LayoutGrid,
   LockKeyhole,
   Menu,
   MessageCircleMore,
   Moon,
-  Network,
-  Play,
   Search,
   ShieldCheck,
   Sparkles,
@@ -72,15 +69,14 @@ const previewPosts = [
 const commandGroups = [
   {
     id: "search",
-    label: "Find anything",
-    command: 'gramclaw search posts "material study" --saved --json',
+    label: "Ask visually",
+    command: 'gramclaw ask "wooden kitchens I saved last year" --json',
     output: `{
   "items": [{
     "id": "post_8f21…",
-    "kind": "carousel",
-    "author": "@nora.works",
-    "saved": true,
-    "caption": "A material study…"
+    "score": 86,
+    "why": ["Objects: wood", "Saved item"],
+    "analysis": {"colors":["#9a7557"]}
   }]
 }`,
   },
@@ -124,7 +120,7 @@ const faqItems = [
   {
     question: "Does Gramclaw upload my archive?",
     answer:
-      "No. The local app imports into SQLite on your machine and serves the workspace on loopback only. The public demo site never receives your Instagram archive, messages, cookies, or tokens.",
+      "No. The app imports into SQLite and analyzes media on your machine. The public site never receives your archive, images, messages, cookies, or tokens. Optional cloud vision runs only when you explicitly choose it.",
   },
   {
     question: "Do I need an Instagram API key?",
@@ -139,7 +135,7 @@ const faqItems = [
   {
     question: "Can agents use it?",
     answer:
-      "Yes. Every read path has stable JSON output: search, posts, conversations, inbox, profiles, relationship graphs, and insights. The same normalized SQLite core powers both the CLI and local web app.",
+      "Yes. Every read path has stable JSON output: visual search, media analysis, Saved collections, boards, conversations, profiles, relationship graphs, and insights.",
   },
   {
     question: "Can it publish?",
@@ -148,21 +144,21 @@ const faqItems = [
   },
 ];
 
-type PreviewTab = "Home" | "Saved" | "Messages" | "Network";
+type PreviewTab = "Home" | "Ask" | "Library" | "Boards";
 
 const previewNav: { label: PreviewTab; Icon: LucideIcon }[] = [
   { label: "Home", Icon: LayoutGrid },
-  { label: "Saved", Icon: BookMarked },
-  { label: "Messages", Icon: MessageCircleMore },
-  { label: "Network", Icon: Network },
+  { label: "Ask", Icon: Search },
+  { label: "Library", Icon: BookMarked },
+  { label: "Boards", Icon: Sparkles },
 ];
 
 const commandMatrix: { title: string; detail: string; Icon: LucideIcon }[] = [
   { title: "Archive", detail: "import · find · restore", Icon: FileArchive },
-  { title: "Memory", detail: "posts · saved · liked · stories", Icon: Database },
+  { title: "Visual memory", detail: "OCR · objects · colors · embeddings", Icon: Sparkles },
   { title: "Conversations", detail: "dms · inbox · comments", Icon: MessageCircleMore },
   { title: "People", detail: "profiles · mutuals · events", Icon: Users },
-  { title: "Media", detail: "fetch · cache · preserve", Icon: Play },
+  { title: "Organize", detail: "clusters · tags · boards · exports", Icon: LayoutGrid },
   { title: "Actions", detail: "draft · post · comment · dm", Icon: Zap },
 ];
 
@@ -212,11 +208,11 @@ function ProductPreview() {
             </div>
             <div className="preview-search">
               <Search size={13} />
-              Search
+              {tab === "Ask" ? "wooden interiors I saved…" : "Search"}
             </div>
           </div>
 
-          {tab === "Home" || tab === "Saved" ? (
+          {tab === "Home" || tab === "Ask" ? (
             <div className="preview-grid">
               {previewPosts
                 .filter((_, index) => tab === "Home" || index !== 0)
@@ -241,46 +237,36 @@ function ProductPreview() {
                         <span>
                           <MessageCircleMore size={10} /> {post.comments}
                         </span>
-                        <time>{post.time}</time>
+                        <time>{tab === "Ask" ? "✓ visual match" : post.time}</time>
                       </footer>
                     </div>
                   </article>
                 ))}
             </div>
-          ) : tab === "Messages" ? (
-            <div className="preview-list">
+          ) : tab === "Library" ? (
+            <div className="preview-collections">
               {[
-                ["Nora Singh", "The first layout is strong. Can we make the margins feel a little stranger?", "Now", "NS"],
-                ["Paper & Current", "We saved the studio shelf image for the next issue moodboard.", "1d", "PC"],
-                ["Linh Tran", "Blue sample is celadon over dark stoneware. I’ll send the firing notes.", "3d", "LT"],
-              ].map(([name, message, time, initials]) => (
-                <div className="preview-row" key={name}>
-                  <i>{initials}</i>
-                  <div>
-                    <strong>{name}</strong>
-                    <p>{message}</p>
-                  </div>
-                  <time>{time}</time>
+                ["Interiors", "42 items", "p1"],
+                ["Ceramics", "28 items", "p3"],
+                ["Graphic design", "61 items", "p2"],
+                ["Unorganized", "13 items", "p4"],
+              ].map(([name, count, palette]) => (
+                <div className={`preview-collection ${palette}`} key={name}>
+                  <span>Automatic</span>
+                  <strong>{name}</strong>
+                  <small>{count}</small>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="preview-network">
-              <div>
-                <span>Followers</span>
-                <strong>18.4k</strong>
-                <small>+284 this quarter</small>
-              </div>
-              <div>
-                <span>Mutuals</span>
-                <strong>284</strong>
-                <small>11 changes in 30d</small>
-              </div>
-              <div className="network-chart" aria-hidden="true">
-                {[48, 57, 54, 68, 73, 79, 76, 88, 92, 98].map((height, index) => (
-                  <i key={index} style={{ height: `${height}%` }} />
-                ))}
-              </div>
+            <div className="preview-board">
+              {previewPosts.map((post, index) => (
+                <article className={`board-paper board-paper-${index}`} key={post.author}>
+                  <div className={`preview-media ${post.palette}`} />
+                  <strong>@{post.author}</strong>
+                  <small>{["Keep the quiet texture.", "Borrow this red.", "Warm evening light."][index]}</small>
+                </article>
+              ))}
             </div>
           )}
         </div>
@@ -326,7 +312,7 @@ export function GramclawSite() {
         <a className="site-logo" href="#top" aria-label="Gramclaw home">
           <span>g</span>
           <strong>gramclaw</strong>
-          <em>v1.0</em>
+          <em>v1.1</em>
         </a>
         <nav className={menuOpen ? "open" : ""} aria-label="Primary navigation">
           <a href="#workspace" onClick={() => setMenuOpen(false)}>
@@ -349,7 +335,7 @@ export function GramclawSite() {
           <button className="theme-button" onClick={toggleTheme} aria-label="Toggle color theme">
             {dark ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-          <a className="nav-download" href="/downloads/gramclaw-1.0.0.tgz" download>
+          <a className="nav-download" href="/downloads/gramclaw-1.1.0.tgz" download>
             Download <ArrowDown size={14} />
           </a>
           <button
@@ -379,12 +365,12 @@ export function GramclawSite() {
             <i>Actually yours.</i>
           </h1>
           <p>
-            Import your archive into private local SQLite. Search every caption and
-            DM, revisit saved posts, preserve media, map relationships, and hand
-            clean JSON to your agents.
+            Import your archive into private local SQLite. Ask for images in natural
+            language, search OCR and visual concepts, organize Saved posts
+            automatically, and build exportable moodboards.
           </p>
           <div className="hero-actions">
-            <a className="button-primary" href="/downloads/gramclaw-1.0.0.tgz" download>
+            <a className="button-primary" href="/downloads/gramclaw-1.1.0.tgz" download>
               <Download size={17} />
               Download Gramclaw
               <span>macOS · Linux · Windows</span>
@@ -398,7 +384,7 @@ export function GramclawSite() {
               <Check size={13} /> No cloud database
             </span>
             <span>
-              <Check size={13} /> No API key required
+              <Check size={13} /> Local analysis by default
             </span>
             <span>
               <Check size={13} /> MIT licensed
@@ -439,6 +425,12 @@ export function GramclawSite() {
           <span>Likes</span>
           <i>✦</i>
           <span>Followers</span>
+          <i>✦</i>
+          <span>Visual search</span>
+          <i>✦</i>
+          <span>OCR</span>
+          <i>✦</i>
+          <span>Boards</span>
         </div>
       </section>
 
@@ -473,7 +465,7 @@ export function GramclawSite() {
               <button
                 onClick={() =>
                   copyCommand(
-                    "npm install -g ./gramclaw-1.0.0.tgz\ngramclaw import archive ~/Downloads/instagram-export.zip\ngramclaw serve --open",
+                    "npm install -g ./gramclaw-1.1.0.tgz\ngramclaw import archive ~/Downloads/instagram-export.zip\ngramclaw analyze run\ngramclaw serve --open",
                   )
                 }
                 aria-label="Copy quickstart commands"
@@ -485,13 +477,19 @@ export function GramclawSite() {
               <code>
                 <span className="comment"># Install the downloaded release</span>
                 {"\n"}
-                <span className="prompt">$</span> npm install -g ./gramclaw-1.0.0.tgz
+                <span className="prompt">$</span> npm install -g ./gramclaw-1.1.0.tgz
                 {"\n\n"}
                 <span className="comment"># Build your local memory</span>
                 {"\n"}
                 <span className="prompt">$</span> gramclaw import archive ~/Downloads/instagram-export.zip
                 {"\n"}
                 <span className="success">✓ 4,218 posts · 12,904 DMs · 1,103 saved</span>
+                {"\n\n"}
+                <span className="comment"># Build the private visual index</span>
+                {"\n"}
+                <span className="prompt">$</span> gramclaw analyze run
+                {"\n"}
+                <span className="success">✓ OCR · objects · colors · embeddings</span>
                 {"\n\n"}
                 <span className="prompt">$</span> gramclaw serve --open
                 {"\n"}
@@ -519,13 +517,13 @@ export function GramclawSite() {
               <FileArchive size={22} />
             </div>
             <span className="feature-number">01</span>
-            <h3>Every format, one index</h3>
+            <h3>Private media understanding</h3>
             <p>
-              Posts, carousels, reels, stories, comments, saved posts, likes,
-              followers, following, and full direct-message history.
+              Local OCR, image descriptions, dominant colors, objects, visual style,
+              embeddings, and duplicate fingerprints—with progress and retry support.
             </p>
             <div className="format-stack" aria-hidden="true">
-              {["posts_1.json", "message_1.json", "saved_posts.json"].map((name, index) => (
+              {["OCR + objects", "palette + style", "visual embedding"].map((name, index) => (
                 <div key={name} style={{ "--index": index } as React.CSSProperties}>
                   <FileArchive size={15} />
                   {name}
@@ -534,7 +532,7 @@ export function GramclawSite() {
               ))}
               <ArrowDown size={18} />
               <div className="sqlite-pill">
-                <Database size={16} /> gramclaw.sqlite
+                <Database size={16} /> private visual index
               </div>
             </div>
           </article>
@@ -543,33 +541,33 @@ export function GramclawSite() {
               <Search size={22} />
             </div>
             <span className="feature-number">02</span>
-            <h3>Search the words you remember</h3>
-            <p>Full-text search across captions, comments, senders, conversation titles, and DMs.</p>
+            <h3>Ask what you remember</h3>
+            <p>Hybrid caption, OCR, metadata, and semantic-image search with creator, date, type, Saved/Liked, color, and topic filters.</p>
             <div className="mini-search">
               <Search size={13} />
-              material study
+              wooden kitchens I saved
               <kbd>⌘ K</kbd>
             </div>
             <div className="mini-result">
               <i>NS</i>
               <p>
-                A <mark>material study</mark> from the north wall…
+                <mark>Wood</mark> · warm interior · last year
               </p>
               <span>Saved</span>
             </div>
           </article>
           <article className="feature-card">
             <div className="feature-icon">
-              <Inbox size={22} />
+              <BookMarked size={22} />
             </div>
             <span className="feature-number">03</span>
-            <h3>One inbox, less noise</h3>
-            <p>Comments and DMs ranked with local intent, follower context, and reply state.</p>
+            <h3>Saved, automatically organized</h3>
+            <p>Topic clusters and a review queue sit beside your own collections, tags, and bulk organization tools.</p>
             <div className="score-list">
               {[
-                ["92", "Project inquiry", "Can we discuss a commission?"],
-                ["74", "Editorial", "Saving this for our next issue."],
-                ["39", "Comment", "Love this 🔥"],
+                ["42", "Interiors", "Wood, kitchens, quiet rooms"],
+                ["28", "Ceramics", "Glaze, clay, studio tests"],
+                ["13", "Unorganized", "Ready for your review"],
               ].map(([score, label, text]) => (
                 <div key={score}>
                   <strong>{score}</strong>
@@ -583,26 +581,23 @@ export function GramclawSite() {
           </article>
           <article className="feature-card feature-wide card-violet">
             <div className="feature-icon">
-              <Network size={22} />
+              <LayoutGrid size={22} />
             </div>
             <span className="feature-number">04</span>
             <div className="wide-copy">
-              <h3>Remember relationships, not just totals</h3>
+              <h3>Build a board while the idea is alive</h3>
               <p>
-                Complete snapshots become current edges and append-only events:
-                arrivals, departures, mutuals, notable followers, and people you
-                follow who don’t follow back.
+                Pull references directly from search, rearrange them freely, add
+                working notes, and export the finished moodboard as an image or PDF.
               </p>
             </div>
-            <div className="relationship-visual" aria-hidden="true">
-              <div className="profile-node node-center">you</div>
-              {["LT", "NS", "KB", "PC", "MS"].map((name, index) => (
-                <div className={`profile-node node-${index}`} key={name}>
-                  {name}
+            <div className="relationship-visual board-feature-visual" aria-hidden="true">
+              {previewPosts.map((post, index) => (
+                <div className={`feature-board-paper feature-board-paper-${index}`} key={post.author}>
+                  <span className={post.palette} />
+                  <strong>@{post.author}</strong>
+                  <small>{["Keep this texture.", "Borrow the red.", "Warm evening light."][index]}</small>
                 </div>
-              ))}
-              {Array.from({ length: 5 }, (_, index) => (
-                <i className={`network-line line-${index}`} key={index} />
               ))}
             </div>
           </article>
@@ -725,7 +720,7 @@ export function GramclawSite() {
                 "Writes stay drafts until --yes",
                 "Browser cookies never enter backups",
                 "Optional app token for local web",
-                "No vectors or remote AI required",
+                "No remote AI required",
                 "Archive-only mode always works",
               ].map((item) => (
                 <span key={item}>
@@ -809,9 +804,9 @@ export function GramclawSite() {
         <p>Local-first Instagram memory</p>
         <h2>Stop renting access<br />to your own history.</h2>
         <div className="hero-actions">
-          <a className="button-primary" href="/downloads/gramclaw-1.0.0.tgz" download>
+          <a className="button-primary" href="/downloads/gramclaw-1.1.0.tgz" download>
             <Download size={17} />
-            Download v1.0
+            Download v1.1
           </a>
           <a className="button-secondary button-on-dark" href="/downloads/gramclaw-source.zip" download>
             Source bundle <ArrowRight size={16} />
@@ -831,7 +826,7 @@ export function GramclawSite() {
         </p>
         <div>
           <a href="#top">Top</a>
-          <a href="/downloads/gramclaw-1.0.0.tgz" download>
+          <a href="/downloads/gramclaw-1.1.0.tgz" download>
             Release
           </a>
           <a href="/downloads/gramclaw-source.zip" download>

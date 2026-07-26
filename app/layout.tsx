@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 const title = "Gramclaw — Your Instagram history, actually yours";
 const description =
-  "A local-first Instagram workspace for archives, posts, stories, DMs, saved posts, likes, relationship history, media, search, and agent-ready JSON.";
+  "A local-first Instagram visual memory with private media analysis, natural-language image search, smart Saved collections, moodboards, archives, DMs, and agent-ready JSON.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -35,6 +35,9 @@ export async function generateMetadata(): Promise<Metadata> {
       "SQLite",
       "Instagram CLI",
       "Instagram backup",
+      "visual search",
+      "moodboard",
+      "OCR",
       "agent tools",
     ],
     icons: {
