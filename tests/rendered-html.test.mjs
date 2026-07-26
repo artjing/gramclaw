@@ -35,7 +35,7 @@ test("server-renders the complete Gramclaw product site", async () => {
   assert.match(html, /127\.0\.0\.1:4667/);
   assert.match(html, /A working memory, not a dashboard/);
   assert.match(html, /Private by architecture/);
-  assert.match(html, /downloads\/gramclaw-1\.0\.0\.tgz/);
+  assert.match(html, /downloads\/gramclaw-1\.1\.0\.tgz/);
   assert.match(html, /downloads\/gramclaw-source\.zip/);
   assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/);
 });
@@ -43,7 +43,7 @@ test("server-renders the complete Gramclaw product site", async () => {
 test("ships metadata and installable release artifacts", async () => {
   const [layout, packageFile, sourceFile, socialCard, favicon] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    access(new URL("../public/downloads/gramclaw-1.0.0.tgz", import.meta.url)),
+    access(new URL("../public/downloads/gramclaw-1.1.0.tgz", import.meta.url)),
     access(new URL("../public/downloads/gramclaw-source.zip", import.meta.url)),
     access(new URL("../public/og.png", import.meta.url)),
     access(new URL("../public/favicon.png", import.meta.url)),
