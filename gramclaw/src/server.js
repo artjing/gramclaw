@@ -5,8 +5,32 @@ import { extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { ensureDirs } from "./config.js";
 import { getDb } from "./db.js";
+import {
+  getAnalysisStatus,
+  resumeAnalysis,
+  retryFailedAnalysis,
+  startAnalysis,
+} from "./analysis.js";
 import { graphComment, graphPublish, graphSendMessage } from "./graph.js";
 import { runWebAction, syncLive, uploadWebPhoto } from "./live.js";
+import {
+  addBoardItems,
+  addPostsToCollection,
+  createBoard,
+  createLibraryCollection,
+  createTag,
+  getBoard,
+  getLibraryOverview,
+  listBoards,
+  listDuplicateGroups,
+  organizeLibrary,
+  removeBoardItem,
+  removePostsFromCollection,
+  tagPosts,
+  updateBoard,
+  updateBoardItem,
+  visualSearch,
+} from "./library.js";
 import {
   getInbox,
   getInsights,
@@ -30,7 +54,8 @@ export async function serve(options = {}) {
   if (!isLoopback(host) && process.env.GRAMCLAW_ALLOW_REMOTE_WEB !== "1") {
     throw new Error("Remote web access is disabled. Bind to 127.0.0.1 or set GRAMCLAW_ALLOW_REMOTE_WEB=1.");
   }
-  getDb({ seedDemo: Boolean(options.demo) });
+  const db = getDb({ seedDemo: Boolean(options.demo) });
+  resumeAnalysis({ db });
   const server = createServer((request, response) => {
     handleRequest(request, response).catch((error) => {
       sendJson(response, 500, {
@@ -146,6 +171,114 @@ async function handleApi(request, response, url) {
       comments: scope === "all" || scope === "comments" ? searchComments(db, q, { limit: 50 }) : [],
       messages: scope === "all" || scope === "dms" ? searchDms(db, q, { limit: 50 }) : [],
     });
+    return;
+  }
+  if (method === "GET" && segments[0] === "visual-search") {
+    sendJson(response, 200, visualSearch(db, url.searchParams.get("q") ?? "", {
+      saved: url.searchParams.get("saved") || undefined,
+      liked: url.searchParams.get("liked") || undefined,
+      since: url.searchParams.get("since") || undefined,
+      until: url.searchParams.get("until") || undefined,
+      author: url.searchParams.get("author") || undefined,
+      color: url.searchParams.get("color") || undefined,
+      topic: url.searchParams.get("topic") || undefined,
+      kind: url.searchParams.get("kind") || undefined,
+      collectionId: url.searchParams.get("collectionId") || undefined,
+      unorganized: url.searchParams.get("unorganized") || undefined,
+      limit: url.searchParams.get("limit") || undefined,
+    }));
+    return;
+  }
+  if (method === "GET" && segments[0] === "analysis" && segments[1] === "status") {
+    sendJson(response, 200, getAnalysisStatus(db));
+    return;
+  }
+  if (method === "POST" && segments[0] === "analysis" && segments[1] === "run") {
+    const body = await readBody(request);
+    sendJson(response, 202, startAnalysis({
+      db,
+      provider: body.provider,
+      force: Boolean(body.force),
+      postIds: Array.isArray(body.postIds) ? body.postIds : undefined,
+      limit: body.limit,
+    }));
+    return;
+  }
+  if (method === "POST" && segments[0] === "analysis" && segments[1] === "retry") {
+    const body = await readBody(request);
+    const queued = retryFailedAnalysis(db, { provider: body.provider });
+    resumeAnalysis({ db });
+    sendJson(response, 202, { ok: true, ...queued, status: getAnalysisStatus(db) });
+    return;
+  }
+  if (method === "GET" && segments[0] === "library" && segments.length === 1) {
+    sendJson(response, 200, getLibraryOverview(db));
+    return;
+  }
+  if (method === "POST" && segments[0] === "library" && segments[1] === "organize") {
+    sendJson(response, 200, organizeLibrary(db));
+    return;
+  }
+  if (method === "GET" && segments[0] === "library" && segments[1] === "duplicates") {
+    sendJson(response, 200, { items: listDuplicateGroups(db) });
+    return;
+  }
+  if (method === "POST" && segments[0] === "library" && segments[1] === "collections" && segments.length === 2) {
+    sendJson(response, 201, createLibraryCollection(db, await readBody(request)));
+    return;
+  }
+  if (method === "POST" && segments[0] === "library" && segments[1] === "collections" && segments[2] && segments[3] === "items") {
+    const body = await readBody(request);
+    sendJson(response, 200, addPostsToCollection(db, decodeURIComponent(segments[2]), body.postIds));
+    return;
+  }
+  if (method === "DELETE" && segments[0] === "library" && segments[1] === "collections" && segments[2] && segments[3] === "items") {
+    const body = await readBody(request);
+    sendJson(response, 200, removePostsFromCollection(db, decodeURIComponent(segments[2]), body.postIds));
+    return;
+  }
+  if (method === "POST" && segments[0] === "library" && segments[1] === "tags" && segments.length === 2) {
+    sendJson(response, 201, createTag(db, await readBody(request)));
+    return;
+  }
+  if (method === "POST" && segments[0] === "library" && segments[1] === "tags" && segments[2] && segments[3] === "items") {
+    const body = await readBody(request);
+    sendJson(response, 200, tagPosts(db, decodeURIComponent(segments[2]), body.postIds));
+    return;
+  }
+  if (method === "GET" && segments[0] === "boards" && segments.length === 1) {
+    sendJson(response, 200, { items: listBoards(db) });
+    return;
+  }
+  if (method === "POST" && segments[0] === "boards" && segments.length === 1) {
+    sendJson(response, 201, createBoard(db, await readBody(request)));
+    return;
+  }
+  if (method === "GET" && segments[0] === "boards" && segments[1]) {
+    const board = getBoard(db, decodeURIComponent(segments[1]));
+    sendJson(response, board ? 200 : 404, board ?? { ok: false, error: "Board not found" });
+    return;
+  }
+  if (method === "PATCH" && segments[0] === "boards" && segments[1] && segments.length === 2) {
+    sendJson(response, 200, updateBoard(db, decodeURIComponent(segments[1]), await readBody(request)));
+    return;
+  }
+  if (method === "POST" && segments[0] === "boards" && segments[1] && segments[2] === "items" && segments.length === 3) {
+    const body = await readBody(request);
+    sendJson(response, 200, addBoardItems(db, decodeURIComponent(segments[1]), body.postIds));
+    return;
+  }
+  if (method === "PATCH" && segments[0] === "boards" && segments[1] && segments[2] === "items" && segments[3]) {
+    sendJson(response, 200, updateBoardItem(
+      db,
+      decodeURIComponent(segments[1]),
+      decodeURIComponent(segments[3]),
+      await readBody(request),
+    ));
+    return;
+  }
+  if (method === "DELETE" && segments[0] === "boards" && segments[1] && segments[2] === "items" && segments[3]) {
+    sendJson(response, 200, removeBoardItem(db, decodeURIComponent(segments[1]), decodeURIComponent(segments[3])));
     return;
   }
   if (method === "GET" && segments[0] === "actions") {

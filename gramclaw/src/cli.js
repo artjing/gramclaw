@@ -4,6 +4,11 @@ import { exportBackup, importBackup, syncBackup, validateBackup } from "./backup
 import { ensureDirs, loadConfig, setHomeOverride, updateConfig } from "./config.js";
 import { defaultAccount, getDb, rebuildFts, seedDemoData } from "./db.js";
 import {
+  getAnalysisStatus,
+  retryFailedAnalysis,
+  runAnalysis,
+} from "./analysis.js";
+import {
   graphComment,
   graphPublish,
   graphReplyToComment,
@@ -11,6 +16,21 @@ import {
 } from "./graph.js";
 import { authStatus, runWebAction, syncLive, uploadWebPhoto, webWhoAmI } from "./live.js";
 import { fetchMedia } from "./media.js";
+import {
+  addBoardItems,
+  addPostsToCollection,
+  createBoard,
+  createLibraryCollection,
+  createTag,
+  getBoard,
+  getLibraryOverview,
+  listBoards,
+  listDuplicateGroups,
+  organizeLibrary,
+  tagPosts,
+  updateBoardItem,
+  visualSearch,
+} from "./library.js";
 import {
   getInbox,
   getInsights,
@@ -33,7 +53,7 @@ export async function runCli(argv) {
   program
     .name("gramclaw")
     .description("Local-first Instagram memory: archive, search, sync, inspect, and act.")
-    .version("1.0.0")
+    .version("1.1.0")
     .option("--home <path>", "Override ~/.gramclaw storage")
     .option("--json", "Emit stable JSON")
     .option("--plain", "Disable decorative output")
@@ -159,6 +179,25 @@ export async function runCli(argv) {
     .description("Search comments")
     .option("--limit <count>", "Maximum results", positiveInteger, 50)
     .action((query, options, command) => output(command, { items: searchComments(getDb(), query.join(" "), options) }));
+  search
+    .command("visual <query...>")
+    .description("Ask natural-language questions across captions, OCR, colors, objects, and visual embeddings")
+    .option("--kind <kinds>", "post, carousel, reel, story")
+    .option("--author <username>", "Filter by author")
+    .option("--since <date>", "Earliest ISO date")
+    .option("--until <date>", "Latest ISO date")
+    .option("--saved", "Only saved posts")
+    .option("--liked", "Only liked posts")
+    .option("--color <name>", "Filter by dominant color")
+    .option("--topic <topic>", "Require a topic")
+    .option("--limit <count>", "Maximum results", positiveInteger, 80)
+    .action((query, options, command) => output(command, visualSearch(getDb(), query.join(" "), options)));
+
+  program
+    .command("ask <query...>")
+    .description("Natural-language visual search")
+    .option("--limit <count>", "Maximum results", positiveInteger, 80)
+    .action((query, options, command) => output(command, visualSearch(getDb(), query.join(" "), options)));
 
   const posts = program.command("posts").description("Read local posts");
   posts
@@ -254,6 +293,103 @@ export async function runCli(argv) {
       ...options,
       postId: options.post,
       timeout: globals(command).timeout,
+    })));
+
+  const analyze = program.command("analyze").description("Build the private visual index");
+  analyze
+    .command("run")
+    .description("Analyze media with the local engine or optional cloud vision")
+    .option("--provider <provider>", "local or cloud", "local")
+    .option("--post <id...>", "Only selected posts")
+    .option("--limit <count>", "Maximum media items", positiveInteger, 500)
+    .option("--force", "Re-analyze completed media")
+    .action(async (options, command) => output(command, await runAnalysis({
+      provider: options.provider,
+      postIds: options.post,
+      limit: options.limit,
+      force: options.force,
+    })));
+  analyze
+    .command("status")
+    .description("Show queue progress and failures")
+    .action((_, command) => output(command, getAnalysisStatus(getDb())));
+  analyze
+    .command("retry")
+    .description("Retry failed analysis jobs")
+    .option("--provider <provider>", "local or cloud", "local")
+    .action(async (options, command) => {
+      const db = getDb();
+      retryFailedAnalysis(db, options);
+      output(command, await runAnalysis({ db, provider: options.provider }));
+    });
+
+  const library = program.command("library").description("Organize Saved items into a smart visual library");
+  library
+    .command("status")
+    .action((_, command) => output(command, getLibraryOverview(getDb())));
+  library
+    .command("organize")
+    .description("Refresh automatic topic collections")
+    .action((_, command) => output(command, organizeLibrary(getDb())));
+  library
+    .command("duplicates")
+    .description("Find duplicate media")
+    .action((_, command) => output(command, { items: listDuplicateGroups(getDb()) }));
+  library
+    .command("create <name>")
+    .description("Create a custom collection")
+    .option("--description <text>", "Collection description")
+    .option("--color <hex>", "Collection color")
+    .option("--post <id...>", "Posts to add")
+    .action((name, options, command) => output(command, createLibraryCollection(getDb(), {
+      name,
+      description: options.description,
+      color: options.color,
+      postIds: options.post,
+    })));
+  library
+    .command("add <collection-id> <post-ids...>")
+    .description("Add posts to a custom collection")
+    .action((collectionId, postIds, _, command) => output(command, addPostsToCollection(getDb(), collectionId, postIds)));
+  library
+    .command("tag <name> <post-ids...>")
+    .description("Create a tag and apply it to posts")
+    .option("--color <hex>", "Tag color")
+    .action((name, postIds, options, command) => {
+      const db = getDb();
+      const tag = createTag(db, { name, color: options.color });
+      output(command, { tag, ...tagPosts(db, tag.id, postIds) });
+    });
+
+  const boards = program.command("boards").description("Create and arrange visual moodboards");
+  boards
+    .command("list")
+    .action((_, command) => output(command, { items: listBoards(getDb()) }));
+  boards
+    .command("create <name>")
+    .option("--description <text>", "Board description")
+    .option("--background <hex>", "Board background")
+    .option("--post <id...>", "Initial posts")
+    .action((name, options, command) => output(command, createBoard(getDb(), {
+      name,
+      description: options.description,
+      background: options.background,
+      postIds: options.post,
+    })));
+  boards
+    .command("show <board-id>")
+    .action((boardId, _, command) => {
+      const board = getBoard(getDb(), boardId);
+      if (!board) throw new Error("Board not found.");
+      output(command, board);
+    });
+  boards
+    .command("add <board-id> <post-ids...>")
+    .action((boardId, postIds, _, command) => output(command, addBoardItems(getDb(), boardId, postIds)));
+  boards
+    .command("note <board-id> <item-id> <note...>")
+    .action((boardId, itemId, note, _, command) => output(command, updateBoardItem(getDb(), boardId, itemId, {
+      note: note.join(" "),
     })));
 
   const backup = program.command("backup").description("Git-friendly JSONL backups");

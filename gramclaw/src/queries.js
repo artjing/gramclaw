@@ -40,6 +40,10 @@ export function getStatus(db) {
     ["followers", "follow_edges where direction='followers' and current=1"],
     ["following", "follow_edges where direction='following' and current=1"],
     ["drafts", "action_queue where status in ('draft','queued')"],
+    ["analyzed", "media_analysis where status='completed'"],
+    ["analysisFailed", "media_analysis where status='failed'"],
+    ["smartCollections", "library_collections"],
+    ["boards", "boards"],
   ]) {
     counts[label] = Number(db.prepare(`select count(*) as count from ${table}`).get().count);
   }
@@ -119,9 +123,31 @@ function attachMedia(db, rows) {
   if (!rows.length) return rows;
   const placeholders = rows.map(() => "?").join(",");
   const mediaRows = db.prepare(`
-    select * from media where post_id in (${placeholders})
-    order by coalesce(created_at, ''), id
-  `).all(...rows.map((row) => row.id)).map(parseRow);
+    select
+      media.*,
+      media_analysis.status as analysis_status,
+      media_analysis.provider as analysis_provider,
+      media_analysis.description as analysis_description,
+      media_analysis.ocr_text as analysis_ocr_text,
+      media_analysis.colors_json as analysis_colors_json,
+      media_analysis.objects_json as analysis_objects_json,
+      media_analysis.style_json as analysis_style_json
+    from media
+    left join media_analysis on media_analysis.media_id=media.id
+    where media.post_id in (${placeholders})
+    order by coalesce(media.created_at, ''), media.id
+  `).all(...rows.map((row) => row.id)).map((row) => ({
+    ...parseRow(row),
+    analysis: row.analysis_status ? {
+      status: row.analysis_status,
+      provider: row.analysis_provider,
+      description: row.analysis_description ?? "",
+      ocrText: row.analysis_ocr_text ?? "",
+      colors: parseJson(row.analysis_colors_json, []),
+      objects: parseJson(row.analysis_objects_json, []),
+      style: parseJson(row.analysis_style_json, {}),
+    } : null,
+  }));
   const map = new Map();
   for (const media of mediaRows) {
     if (!map.has(media.post_id)) map.set(media.post_id, []);
@@ -159,6 +185,22 @@ export function getPost(db, idOrShortcode) {
     where comments.post_id=?
     order by coalesce(comments.created_at, '') asc
   `).all(post.id).map(parseRow);
+  post.libraryCollections = db.prepare(`
+    select
+      library_collections.id,
+      library_collections.name,
+      library_collections.color,
+      library_collection_items.source
+    from library_collection_items
+    join library_collections on library_collections.id=library_collection_items.collection_id
+    where library_collection_items.post_id=?
+    order by library_collections.name
+  `).all(post.id);
+  post.tags = db.prepare(`
+    select tags.id, tags.name, tags.color
+    from post_tags join tags on tags.id=post_tags.tag_id
+    where post_tags.post_id=? order by tags.name
+  `).all(post.id);
   return post;
 }
 

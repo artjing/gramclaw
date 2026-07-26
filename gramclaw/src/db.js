@@ -132,6 +132,101 @@ create table if not exists collections (
 
 create index if not exists collections_kind_idx on collections(account_id, kind, collected_at desc);
 
+create table if not exists media_analysis (
+  media_id text primary key,
+  post_id text,
+  status text not null default 'queued' check(status in ('queued','running','completed','failed')),
+  provider text not null default 'local' check(provider in ('local','cloud')),
+  description text not null default '',
+  ocr_text text not null default '',
+  colors_json text not null default '[]',
+  objects_json text not null default '[]',
+  style_json text not null default '{}',
+  embedding_json text not null default '[]',
+  perceptual_hash text,
+  attempts integer not null default 0,
+  error text,
+  queued_at text not null,
+  started_at text,
+  completed_at text,
+  updated_at text not null
+);
+
+create index if not exists media_analysis_post_idx on media_analysis(post_id);
+create index if not exists media_analysis_status_idx on media_analysis(status, queued_at);
+create index if not exists media_analysis_hash_idx
+  on media_analysis(perceptual_hash) where perceptual_hash is not null;
+
+create table if not exists library_collections (
+  id text primary key,
+  account_id text not null,
+  name text not null,
+  slug text not null,
+  description text not null default '',
+  color text not null default '#8267f5',
+  kind text not null default 'custom' check(kind in ('automatic','custom')),
+  rules_json text not null default '{}',
+  created_at text not null,
+  updated_at text not null,
+  unique(account_id, slug)
+);
+
+create table if not exists library_collection_items (
+  collection_id text not null,
+  post_id text not null,
+  source text not null default 'manual' check(source in ('automatic','manual')),
+  added_at text not null,
+  primary key(collection_id, post_id)
+);
+
+create index if not exists library_collection_items_post_idx
+  on library_collection_items(post_id, added_at desc);
+
+create table if not exists tags (
+  id text primary key,
+  account_id text not null,
+  name text not null,
+  slug text not null,
+  color text not null default '#d8f75a',
+  created_at text not null,
+  unique(account_id, slug)
+);
+
+create table if not exists post_tags (
+  post_id text not null,
+  tag_id text not null,
+  added_at text not null,
+  primary key(post_id, tag_id)
+);
+
+create table if not exists boards (
+  id text primary key,
+  account_id text not null,
+  name text not null,
+  description text not null default '',
+  background text not null default '#f1efe9',
+  created_at text not null,
+  updated_at text not null
+);
+
+create table if not exists board_items (
+  id text primary key,
+  board_id text not null,
+  post_id text not null,
+  media_id text,
+  note text not null default '',
+  x real not null default 0,
+  y real not null default 0,
+  width real not null default 280,
+  height real not null default 340,
+  rotation real not null default 0,
+  sort_order integer not null default 0,
+  created_at text not null,
+  updated_at text not null
+);
+
+create index if not exists board_items_board_idx on board_items(board_id, sort_order);
+
 create table if not exists dm_threads (
   id text primary key,
   account_id text not null,
@@ -293,6 +388,16 @@ create virtual table if not exists dms_fts using fts5(
   thread_title,
   tokenize='unicode61 remove_diacritics 2'
 );
+
+create virtual table if not exists visual_fts using fts5(
+  media_id unindexed,
+  post_id unindexed,
+  description,
+  ocr_text,
+  objects,
+  style,
+  tokenize='unicode61 remove_diacritics 2'
+);
 `;
 
 export function getDb(options = {}) {
@@ -304,7 +409,7 @@ export function getDb(options = {}) {
   database = new Database(paths.dbPath);
   database.exec("pragma journal_mode = WAL; pragma foreign_keys = on; pragma busy_timeout = 5000;");
   database.exec(SCHEMA);
-  database.exec("pragma user_version = 1;");
+  database.exec("pragma user_version = 2;");
   if (options.seedDemo && !existed) seedDemoData(database);
   return database;
 }
@@ -603,7 +708,7 @@ export function addCollection(db, input) {
 
 export function rebuildFts(db) {
   transaction(db, () => {
-    db.exec("delete from posts_fts; delete from comments_fts; delete from dms_fts;");
+    db.exec("delete from posts_fts; delete from comments_fts; delete from dms_fts; delete from visual_fts;");
     db.exec(`
       insert into posts_fts(post_id, caption, author, kind)
       select posts.id, posts.caption, profiles.username, posts.kind
@@ -619,6 +724,17 @@ export function rebuildFts(db) {
       from dm_messages
       join dm_threads on dm_threads.id=dm_messages.thread_id
       left join profiles on profiles.id=dm_messages.sender_profile_id;
+
+      insert into visual_fts(media_id, post_id, description, ocr_text, objects, style)
+      select
+        media_id,
+        post_id,
+        description,
+        ocr_text,
+        replace(replace(objects_json, '[', ''), ']', ''),
+        style_json
+      from media_analysis
+      where status='completed';
     `);
   });
 }
@@ -730,6 +846,76 @@ export function seedDemoData(db) {
   addCollection(db, { accountId: account.id, postId: "post_demo_05", kind: "saved", collectedAt: "2026-07-18T18:00:00.000Z", source: "demo" });
   addCollection(db, { accountId: account.id, postId: "post_demo_01", kind: "liked", collectedAt: "2026-07-24T19:00:00.000Z", source: "demo" });
   addCollection(db, { accountId: account.id, postId: "post_demo_06", kind: "liked", collectedAt: "2026-07-15T12:00:00.000Z", source: "demo" });
+
+  const demoAnalysis = [
+    ["post_demo_01", "Rows of handmade ceramic glaze tests in a softly lit studio.", ["#6f8f99", "#d8d2bf", "#806b5d"], ["ceramic", "pottery", "glaze", "studio", "material"], { mood: "quiet", lighting: "soft", palette: "cool", composition: "grid", medium: "photograph" }],
+    ["post_demo_02", "A red typographic identity system arranged with tide charts and shipping labels.", ["#c75047", "#ece5d6", "#304c63"], ["graphic design", "poster", "paper", "typography", "layout"], { mood: "graphic", lighting: "flat", palette: "warm", composition: "grid", medium: "photograph" }],
+    ["post_demo_03", "Warm evening light moves across a minimal plaster interior wall.", ["#d5a269", "#8a6248", "#3f3b45"], ["interior", "wall", "architecture", "light"], { mood: "calm", lighting: "golden hour", palette: "warm", composition: "minimal", medium: "moving image" }],
+    ["post_demo_04", "A foggy ferry scene with passengers looking toward the water.", ["#96a5aa", "#d8d6cf", "#4e5a5f"], ["travel", "ferry", "ocean", "people", "fog"], { mood: "documentary", lighting: "overcast", palette: "cool", composition: "landscape", medium: "photograph" }],
+    ["post_demo_05", "Five useful objects and wooden furniture arranged in a compact room.", ["#9a7557", "#ded0b8", "#686052"], ["interior", "furniture", "wood", "room", "chair", "lamp"], { mood: "warm", lighting: "natural", palette: "brown", composition: "editorial", medium: "photograph" }],
+    ["post_demo_06", "A print journal issue about repair, care, and material evidence.", ["#e7dfcf", "#292927", "#b66e55"], ["book", "paper", "print", "graphic design", "material"], { mood: "editorial", lighting: "soft", palette: "neutral", composition: "still life", medium: "photograph" }],
+    ["post_demo_07", "A morning flower stem study against a pale background.", ["#708b68", "#e6dfd0", "#bf9b8c"], ["flower", "plant", "nature", "botanical"], { mood: "gentle", lighting: "morning", palette: "green", composition: "portrait", medium: "moving image" }],
+    ["post_demo_08", "A working studio shelf filled with ceramic samples and unfinished objects.", ["#8a6f59", "#aaaeb5", "#d7c9b4"], ["studio", "shelf", "ceramic", "objects", "material"], { mood: "work-in-progress", lighting: "natural", palette: "neutral", composition: "shelf", medium: "photograph" }],
+  ];
+  const insertAnalysis = db.prepare(`
+    insert into media_analysis(
+      media_id, post_id, status, provider, description, ocr_text, colors_json,
+      objects_json, style_json, embedding_json, perceptual_hash, attempts,
+      queued_at, started_at, completed_at, updated_at
+    ) values (?, ?, 'completed', 'local', ?, '', ?, ?, ?, '[]', ?, 1, ?, ?, ?, ?)
+  `);
+  for (const [postId, description, colors, objects, style] of demoAnalysis) {
+    const time = "2026-07-25T17:00:00.000Z";
+    insertAnalysis.run(
+      `media_${postId}`,
+      postId,
+      description,
+      json(colors, []),
+      json(objects, []),
+      json(style, {}),
+      stableId("fingerprint", postId).slice(-16),
+      time,
+      time,
+      time,
+      time,
+    );
+  }
+
+  const collectionTime = "2026-07-25T17:05:00.000Z";
+  const demoCollections = [
+    ["collection_demo_graphic", "Graphic design", "graphic-design", "#ff725e", ["post_demo_02"]],
+    ["collection_demo_interiors", "Interiors", "interiors", "#d39b6a", ["post_demo_05"]],
+  ];
+  const insertSmartCollection = db.prepare(`
+    insert into library_collections(
+      id, account_id, name, slug, description, color, kind, rules_json, created_at, updated_at
+    ) values (?, ?, ?, ?, ?, ?, 'automatic', '{}', ?, ?)
+  `);
+  const insertSmartItem = db.prepare(`
+    insert into library_collection_items(collection_id, post_id, source, added_at)
+    values (?, ?, 'automatic', ?)
+  `);
+  for (const [id, name, slug, color, postIds] of demoCollections) {
+    insertSmartCollection.run(id, account.id, name, slug, `${name} found automatically in Saved.`, color, collectionTime, collectionTime);
+    for (const postId of postIds) insertSmartItem.run(id, postId, collectionTime);
+  }
+
+  db.prepare(`
+    insert into boards(id, account_id, name, description, background, created_at, updated_at)
+    values ('board_demo_01', ?, 'Issue 09 — material quiet', 'References for a story about useful imperfection.', '#e9e4d9', ?, ?)
+  `).run(account.id, collectionTime, collectionTime);
+  const insertBoardItem = db.prepare(`
+    insert into board_items(
+      id, board_id, post_id, media_id, note, x, y, width, height, rotation, sort_order, created_at, updated_at
+    ) values (?, 'board_demo_01', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  [
+    ["board_item_demo_1", "post_demo_01", "Keep the imperfect tests.", 42, 42, 270, 330, -1.4, 0],
+    ["board_item_demo_2", "post_demo_02", "Borrow the red accent and grid.", 352, 76, 290, 345, 1.1, 1],
+    ["board_item_demo_3", "post_demo_05", "Warm wood, compact scale.", 690, 38, 270, 330, -0.5, 2],
+  ].forEach(([id, postId, note, x, y, width, height, rotation, order]) => {
+    insertBoardItem.run(id, postId, `media_${postId}`, note, x, y, width, height, rotation, order, collectionTime, collectionTime);
+  });
 
   upsertComment(db, { id: "comment_demo_1", postId: "post_demo_08", authorProfileId: people[2].id, text: "The unfinished shelf is always the most honest one.", createdAt: "2026-07-12T17:02:00.000Z", source: "demo" });
   upsertComment(db, { id: "comment_demo_2", postId: "post_demo_08", authorProfileId: people[0].id, text: "Would love to see the blue sample closer.", createdAt: "2026-07-12T17:21:00.000Z", source: "demo" });
