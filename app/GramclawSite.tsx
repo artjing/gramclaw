@@ -2,7 +2,6 @@
 
 import {
   ArrowDown,
-  ArrowRight,
   BookMarked,
   Camera,
   Check,
@@ -153,6 +152,10 @@ const previewNav: { label: PreviewTab; Icon: LucideIcon }[] = [
   { label: "Boards", Icon: Sparkles },
 ];
 
+const githubUrl = "https://github.com/artjing/gramclaw";
+const publicDemoUrl =
+  "https://gramclaw-instagram-memory.jingjing768.chatgpt.site/#demo";
+
 const commandMatrix: { title: string; detail: string; Icon: LucideIcon }[] = [
   { title: "Archive", detail: "import · find · restore", Icon: FileArchive },
   { title: "Visual memory", detail: "OCR · objects · colors · embeddings", Icon: Sparkles },
@@ -275,6 +278,198 @@ function ProductPreview() {
   );
 }
 
+type DemoView = "Analyze" | "Ask" | "Library" | "Boards";
+
+const demoViews: { label: DemoView; detail: string; Icon: LucideIcon }[] = [
+  { label: "Analyze", detail: "OCR, objects, colors", Icon: Camera },
+  { label: "Ask", detail: "Hybrid visual search", Icon: Search },
+  { label: "Library", detail: "Clusters, tags, review", Icon: BookMarked },
+  { label: "Boards", detail: "Arrange, note, export", Icon: LayoutGrid },
+];
+
+function DemoLab() {
+  const [view, setView] = useState<DemoView>("Ask");
+
+  return (
+    <div className="demo-console" id="demo-console" data-demo-active={view.toLowerCase()}>
+      <div className="demo-console-top">
+        <div className="traffic-lights" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
+        <span>
+          <LockKeyhole size={11} /> gramclaw · sample archive
+        </span>
+        <em>Nothing uploaded</em>
+      </div>
+      <div className="demo-console-shell">
+        <aside className="demo-console-nav" aria-label="Demo features">
+          <div>
+            <span>g</span>
+            <strong>Try v1.1</strong>
+          </div>
+          {demoViews.map(({ label, detail, Icon }) => (
+            <button
+              key={label}
+              className={view === label ? "active" : ""}
+              onClick={() => setView(label)}
+              aria-pressed={view === label}
+            >
+              <Icon size={16} />
+              <span>
+                <strong>{label}</strong>
+                <small>{detail}</small>
+              </span>
+            </button>
+          ))}
+          <p>
+            <ShieldCheck size={13} />
+            Demo data only
+          </p>
+        </aside>
+
+        <div className="demo-console-main">
+          <header className="demo-view-head">
+            <div>
+              <span>PUBLIC PRODUCT DEMO</span>
+              <h3>
+                {view === "Analyze" && "Media analysis"}
+                {view === "Ask" && "Ask your visual memory"}
+                {view === "Library" && "Smart Saved Library"}
+                {view === "Boards" && "Material study board"}
+              </h3>
+            </div>
+            <em>
+              <CircleDot size={10} /> Local mode
+            </em>
+          </header>
+
+          {view === "Analyze" ? (
+            <div className="demo-analysis">
+              <div className="analysis-progress">
+                <div>
+                  <span>Analysis complete</span>
+                  <strong>128 / 128 media</strong>
+                </div>
+                <b>100%</b>
+                <i>
+                  <span />
+                </i>
+              </div>
+              <div className="analysis-media-grid">
+                {[
+                  ["Kitchen study", "wood · table · daylight", "p1"],
+                  ["Ceramic shelf", "clay · vessel · neutral", "p3"],
+                  ["Type archive", "poster · red · typography", "p2"],
+                ].map(([title, objects, palette]) => (
+                  <article key={title}>
+                    <div className={`demo-media ${palette}`} />
+                    <span>APPLE VISION · LOCAL</span>
+                    <strong>{title}</strong>
+                    <small>{objects}</small>
+                    <footer>
+                      <em>OCR</em>
+                      <em>Palette</em>
+                      <em>Embedding</em>
+                    </footer>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : view === "Ask" ? (
+            <div className="demo-ask">
+              <div className="demo-query">
+                <Search size={17} />
+                <span>wooden kitchens I saved last year</span>
+                <kbd>↵</kbd>
+              </div>
+              <div className="demo-filter-row">
+                {["Saved", "2025", "Images", "Warm tones", "Interiors"].map((filter) => (
+                  <span key={filter}>
+                    <Check size={10} /> {filter}
+                  </span>
+                ))}
+              </div>
+              <div className="demo-result-grid">
+                {[
+                  ["nora.works", "92", "Objects: wood · OCR: kitchen", "p1"],
+                  ["mina.studio", "86", "Warm palette · Saved in 2025", "p3"],
+                  ["field.notes", "81", "Semantic match · interior", "p2"],
+                ].map(([author, score, why, palette]) => (
+                  <article key={author}>
+                    <div className={`demo-media ${palette}`}>
+                      <b>{score}%</b>
+                    </div>
+                    <div>
+                      <strong>@{author}</strong>
+                      <small>{why}</small>
+                      <span>Why it matched</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : view === "Library" ? (
+            <div className="demo-library">
+              <div className="demo-library-grid">
+                {[
+                  ["Interiors", "42", "Wood · kitchens · quiet rooms", "p1"],
+                  ["Ceramics", "28", "Clay · glaze · studio tests", "p3"],
+                  ["Graphic systems", "61", "Posters · type · red", "p2"],
+                ].map(([name, count, topics, palette]) => (
+                  <article key={name}>
+                    <div className={`demo-media ${palette}`} />
+                    <span>AUTO CLUSTER</span>
+                    <strong>{name}</strong>
+                    <small>{topics}</small>
+                    <b>{count}</b>
+                  </article>
+                ))}
+              </div>
+              <div className="demo-review-queue">
+                <span>Unorganized review</span>
+                <strong>13 saved posts need a home</strong>
+                <div>
+                  <button>+ Collection</button>
+                  <button>Tag selected</button>
+                  <button>Find duplicates</button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="demo-board">
+              <div className="demo-board-toolbar">
+                <span>Warm material study</span>
+                <div>
+                  <button>Background</button>
+                  <button>Export PNG</button>
+                  <button>Export PDF</button>
+                </div>
+              </div>
+              <div className="demo-board-canvas">
+                {previewPosts.map((post, index) => (
+                  <article className={`demo-board-paper demo-board-paper-${index}`} key={post.author}>
+                    <div className={`demo-media ${post.palette}`} />
+                    <strong>@{post.author}</strong>
+                    <small>
+                      {["Keep the quiet texture.", "Borrow this red.", "Warm evening light."][index]}
+                    </small>
+                  </article>
+                ))}
+                <p>
+                  Working direction
+                  <span>Tactile surfaces, warm light, restrained color.</span>
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function GramclawSite() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dark, setDark] = useState(false);
@@ -317,6 +512,9 @@ export function GramclawSite() {
         <nav className={menuOpen ? "open" : ""} aria-label="Primary navigation">
           <a href="#workspace" onClick={() => setMenuOpen(false)}>
             Workspace
+          </a>
+          <a href="#demo" onClick={() => setMenuOpen(false)}>
+            Live demo
           </a>
           <a href="#features" onClick={() => setMenuOpen(false)}>
             Features
@@ -370,18 +568,18 @@ export function GramclawSite() {
             automatically, and build exportable moodboards.
           </p>
           <div className="hero-actions">
-            <a className="button-primary" href="/downloads/gramclaw-1.1.0.tgz" download>
-              <Download size={17} />
-              Download Gramclaw
-              <span>macOS · Linux · Windows</span>
+            <a className="button-primary" href="#demo">
+              <Sparkles size={17} />
+              Try the public demo
+              <span>No login · sample data</span>
             </a>
-            <a className="button-secondary" href="#quickstart">
-              See quickstart <ArrowRight size={16} />
+            <a className="button-secondary" href="/downloads/gramclaw-1.1.0.tgz" download>
+              <Download size={16} /> Download v1.1
             </a>
           </div>
           <div className="hero-proof">
             <span>
-              <Check size={13} /> No cloud database
+              <Check size={13} /> Demo needs no Instagram login
             </span>
             <span>
               <Check size={13} /> Local analysis by default
@@ -434,9 +632,50 @@ export function GramclawSite() {
         </div>
       </section>
 
+      <section className="demo-section section-pad" id="demo">
+        <div className="section-label">
+          <span>01</span> Four design milestones, now shipped
+        </div>
+        <div className="demo-intro">
+          <div>
+            <h2>Try the full visual-memory workflow.</h2>
+            <p>
+              Explore a privacy-safe sample archive—analyze media, ask in natural
+              language, organize Saved posts, and compose a board. The demo is
+              interactive, but nothing leaves your browser.
+            </p>
+          </div>
+          <ol>
+            {demoViews.map(({ label, detail }, index) => (
+              <li key={label}>
+                <span>0{index + 1}</span>
+                <div>
+                  <strong>{label}</strong>
+                  <small>{detail}</small>
+                </div>
+                <Check size={14} />
+              </li>
+            ))}
+          </ol>
+        </div>
+        <DemoLab />
+        <div className="demo-links">
+          <div>
+            <strong>Shareable public demo</strong>
+            <span>Public, no account required, seeded with fictional data.</span>
+          </div>
+          <a className="button-primary" href={publicDemoUrl} target="_blank" rel="noreferrer">
+            Open public demo <ExternalLink size={15} />
+          </a>
+          <a className="button-secondary" href={githubUrl} target="_blank" rel="noreferrer">
+            View source <GitBranch size={15} />
+          </a>
+        </div>
+      </section>
+
       <section className="quickstart section-pad" id="quickstart">
         <div className="section-label">
-          <span>01</span> Start in a minute
+          <span>02</span> Start in a minute
         </div>
         <div className="quickstart-grid">
           <div className="quickstart-copy">
@@ -502,7 +741,7 @@ export function GramclawSite() {
 
       <section className="features section-pad" id="features">
         <div className="section-label">
-          <span>02</span> A working memory, not a dashboard
+          <span>03</span> A working memory, not a dashboard
         </div>
         <div className="section-heading">
           <h2>Instagram is the source. Your machine is the home.</h2>
@@ -641,7 +880,7 @@ export function GramclawSite() {
 
       <section className="cli-section section-pad" id="cli">
         <div className="section-label section-label-light">
-          <span>03</span> Claw-ready from day one
+          <span>04</span> Claw-ready from day one
         </div>
         <div className="cli-grid">
           <div className="cli-copy">
@@ -700,7 +939,7 @@ export function GramclawSite() {
 
       <section className="safety section-pad" id="safety">
         <div className="section-label">
-          <span>04</span> Private by architecture
+          <span>05</span> Private by architecture
         </div>
         <div className="safety-shell">
           <div className="safety-copy">
@@ -774,7 +1013,7 @@ export function GramclawSite() {
 
       <section className="faq section-pad" id="faq">
         <div className="section-label">
-          <span>05</span> Before you download
+          <span>06</span> Before you download
         </div>
         <div className="faq-grid">
           <div>
@@ -804,12 +1043,12 @@ export function GramclawSite() {
         <p>Local-first Instagram memory</p>
         <h2>Stop renting access<br />to your own history.</h2>
         <div className="hero-actions">
-          <a className="button-primary" href="/downloads/gramclaw-1.1.0.tgz" download>
-            <Download size={17} />
-            Download v1.1
+          <a className="button-primary" href={publicDemoUrl} target="_blank" rel="noreferrer">
+            <Sparkles size={17} />
+            Try public demo
           </a>
-          <a className="button-secondary button-on-dark" href="/downloads/gramclaw-source.zip" download>
-            Source bundle <ArrowRight size={16} />
+          <a className="button-secondary button-on-dark" href="/downloads/gramclaw-1.1.0.tgz" download>
+            Download v1.1 <Download size={16} />
           </a>
         </div>
         <span className="cta-note">Node 22+ · MIT · macOS, Linux, Windows</span>
@@ -826,6 +1065,12 @@ export function GramclawSite() {
         </p>
         <div>
           <a href="#top">Top</a>
+          <a href={publicDemoUrl} target="_blank" rel="noreferrer">
+            Demo
+          </a>
+          <a href={githubUrl} target="_blank" rel="noreferrer">
+            GitHub
+          </a>
           <a href="/downloads/gramclaw-1.1.0.tgz" download>
             Release
           </a>

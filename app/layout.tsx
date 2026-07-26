@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 const title = "Gramclaw — Your Instagram history, actually yours";
 const description =
-  "A local-first Instagram visual memory with private media analysis, natural-language image search, smart Saved collections, moodboards, archives, DMs, and agent-ready JSON.";
+  "Try Gramclaw’s public demo: a local-first Instagram visual memory with private media analysis, natural-language image search, smart Saved collections, moodboards, archives, DMs, and agent-ready JSON.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -38,6 +38,8 @@ export async function generateMetadata(): Promise<Metadata> {
       "visual search",
       "moodboard",
       "OCR",
+      "Instagram Saved organizer",
+      "public demo",
       "agent tools",
     ],
     icons: {
