@@ -11,6 +11,18 @@ const state = {
   activeBoard: null,
   analysisTimer: null,
   autoOrganize: false,
+  authStatus: null,
+  authUi: {
+    state: "idle",
+    attemptId: null,
+    prompt: null,
+    username: "",
+    result: null,
+    errorCode: null,
+    errorMessage: null,
+  },
+  authController: null,
+  onboardingDismissed: false,
 };
 
 const els = {
@@ -24,6 +36,10 @@ const els = {
   inboxCount: document.querySelector("#inbox-count"),
   dialog: document.querySelector("#detail-dialog"),
   dialogContent: document.querySelector("#dialog-content"),
+  onboarding: document.querySelector("#auth-onboarding"),
+  accountPill: document.querySelector("#account-pill"),
+  connectionDialog: document.querySelector("#connection-dialog"),
+  connectionContent: document.querySelector("#connection-content"),
   toast: document.querySelector("#toast"),
 };
 
@@ -46,8 +62,10 @@ init();
 async function init() {
   applyTheme();
   bindEvents();
-  await refreshStatus();
-  await render();
+  await Promise.all([refreshStatus(), refreshAuthStatus()]);
+  renderAccountPill();
+  if (shouldGateOnboarding()) showOnboarding();
+  else await render();
 }
 
 function bindEvents() {
@@ -72,6 +90,19 @@ function bindEvents() {
     localStorage.setItem("gramclaw-theme", state.theme);
     applyTheme();
   });
+  els.accountPill.addEventListener("click", openConnectionDialog);
+  els.connectionDialog.querySelector(".dialog-close").addEventListener("click", () => els.connectionDialog.close());
+  els.connectionDialog.addEventListener("click", async (event) => {
+    const action = event.target.closest("[data-connection-action]");
+    if (action) {
+      event.preventDefault();
+      await handleConnectionAction(action.dataset.connectionAction);
+    } else if (event.target === els.connectionDialog) {
+      els.connectionDialog.close();
+    }
+  });
+  els.onboarding.addEventListener("submit", handleAuthSubmit);
+  els.onboarding.addEventListener("click", handleAuthClick);
   els.sync.addEventListener("click", syncCurrentView);
   els.dialog.querySelector(".dialog-close").addEventListener("click", () => els.dialog.close());
   els.dialog.addEventListener("click", async (event) => {
@@ -106,6 +137,479 @@ async function refreshStatus() {
     ["Smart collections", formatNumber(counts.smartCollections)],
     ["Boards", formatNumber(counts.boards)],
   ].map(([label, value]) => `<div class="summary-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+}
+
+async function refreshAuthStatus() {
+  state.authStatus = await api("/api/auth/status");
+  renderAccountPill();
+}
+
+function hasUsableLiveSession() {
+  return Boolean(
+    state.authStatus?.direct?.available
+    || state.authStatus?.cookie?.available
+    || state.authStatus?.graph?.available,
+  );
+}
+
+function isEmptyWorkspace() {
+  const counts = state.status?.counts ?? {};
+  return Number(counts.profiles ?? 0) === 0
+    && Number(counts.posts ?? 0) === 0
+    && Number(counts.comments ?? 0) === 0
+    && Number(counts.dmMessages ?? 0) === 0;
+}
+
+function shouldGateOnboarding() {
+  return !state.onboardingDismissed && isEmptyWorkspace() && !hasUsableLiveSession();
+}
+
+function showOnboarding(options = {}) {
+  if (options.reset !== false) {
+    state.authUi = {
+      state: "idle",
+      attemptId: null,
+      prompt: null,
+      username: state.authStatus?.direct?.username ?? state.status?.account?.username ?? "",
+      result: null,
+      errorCode: null,
+      errorMessage: null,
+    };
+  }
+  document.body.classList.add("onboarding-active");
+  els.onboarding.hidden = false;
+  renderAuthPanel();
+}
+
+async function dismissOnboarding() {
+  state.onboardingDismissed = true;
+  els.onboarding.hidden = true;
+  els.onboarding.replaceChildren();
+  document.body.classList.remove("onboarding-active");
+  await render();
+}
+
+function renderAuthPanel() {
+  const ui = state.authUi;
+  const card = authStateCard(ui);
+  els.onboarding.innerHTML = `
+    <div class="auth-atmosphere" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="auth-layout">
+      <section class="auth-intro">
+        <div class="auth-brand"><span class="brand-mark">g</span><strong>gramclaw</strong></div>
+        <p class="eyebrow">Local Instagram memory</p>
+        <h1 id="auth-title">Your Instagram,<br><em>on this machine.</em></h1>
+        <p>Sign in once to connect live sync. Your library stays in local SQLite, your session stays in your system credential store, and Gramclaw never saves your password.</p>
+        <div class="auth-local-note"><i></i><span><strong>Archive-only always works.</strong> Direct sign-in is optional, and opening your workspace never starts a network read.</span></div>
+      </section>
+      <section class="auth-card" aria-live="polite" aria-busy="${["preparing_runtime", "signing_in"].includes(ui.state)}">
+        ${card}
+      </section>
+    </div>`;
+  queueMicrotask(() => {
+    const focusTarget = els.onboarding.querySelector("[data-auth-autofocus], h2");
+    focusTarget?.focus?.();
+  });
+}
+
+function authStateCard(ui) {
+  if (ui.state === "idle") {
+    return `
+      <div class="auth-card-head">
+        <span class="auth-step">Secure sign-in</span>
+        <h2 tabindex="-1">Connect Instagram</h2>
+        <p>One account, one reusable session, no password file.</p>
+      </div>
+      <form id="auth-login-form" class="auth-form">
+        <label>Instagram username
+          <span class="auth-input"><b>@</b><input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" value="${escapeAttr(ui.username)}" required data-auth-autofocus></span>
+        </label>
+        <label>Password
+          <span class="auth-input"><input name="password" type="password" autocomplete="current-password" required><button type="button" class="reveal-secret" data-auth-action="toggle-password" aria-label="Show password">Show</button></span>
+        </label>
+        <label class="risk-check"><input name="acceptRisk" type="checkbox" required><span>${escapeHtml("Direct sign-in uses Instagram's unofficial private API. Instagram may challenge, restrict, or ban accounts that use it; continue only with an account you control.")}</span></label>
+        <button class="auth-primary" type="submit">Connect Instagram <span>↗</span></button>
+      </form>
+      <p class="auth-privacy">Your password goes directly from this form to the local Gramclaw process and is discarded after sign-in. Your reusable session is saved in your system credential store. It is never placed in SQLite or Gramclaw backups.</p>
+      <div class="auth-alternatives" aria-label="Other ways to begin">
+        <button type="button" data-auth-action="import-archive">Import an archive instead</button>
+        <button type="button" data-auth-action="use-browser">Use a signed-in browser</button>
+      </div>`;
+  }
+  if (ui.state === "preparing_runtime" || ui.state === "signing_in") {
+    const preparing = ui.state === "preparing_runtime";
+    return `
+      <div class="auth-progress-mark" aria-hidden="true"><span>g</span><i></i></div>
+      <div class="auth-card-head centered">
+        <span class="auth-step">${preparing ? "Preparing runtime" : "Instagram sign-in"}</span>
+        <h2 tabindex="-1">${preparing ? "Preparing secure sign-in…" : `Signing in as @${escapeHtml(ui.username)}…`}</h2>
+        <p>${preparing ? "Checking Python 3.10+, locked packages, and your system credential store." : "Instagram may take a moment or ask for one more verification step."}</p>
+      </div>
+      <button type="button" class="text-button auth-cancel" data-auth-action="cancel">Cancel</button>`;
+  }
+  if (["needs_2fa", "needs_challenge_code"].includes(ui.state)) {
+    const challenge = ui.state === "needs_challenge_code";
+    const destination = ui.prompt?.maskedDestination
+      ? ` sent to ${escapeHtml(ui.prompt.maskedDestination)}`
+      : "";
+    return `
+      <div class="auth-card-head">
+        <span class="auth-step">${challenge ? "Instagram checkpoint" : "Two-factor authentication"}</span>
+        <h2 tabindex="-1">${challenge ? "Enter the challenge code" : "Enter your one-time code"}</h2>
+        <p>${challenge ? `Use the ${escapeHtml(ui.prompt?.channel ?? "email or SMS")} code${destination}.` : "Authenticator, SMS, and recovery codes are accepted."}</p>
+      </div>
+      <form id="auth-code-form" class="auth-form compact">
+        <label>Verification code
+          <span class="auth-input"><input name="code" type="password" autocomplete="one-time-code" inputmode="text" required data-auth-autofocus><button type="button" class="reveal-secret" data-auth-action="toggle-code" aria-label="Show code">Show</button></span>
+        </label>
+        <button class="auth-primary" type="submit">Continue <span>↗</span></button>
+      </form>
+      <div class="auth-inline-actions"><button type="button" data-auth-action="back">Back</button><button type="button" data-auth-action="cancel">Cancel</button></div>`;
+  }
+  if (ui.state === "needs_manual_approval") {
+    return `
+      <div class="auth-manual-mark" aria-hidden="true">↗</div>
+      <div class="auth-card-head">
+        <span class="auth-step">Official Instagram checkpoint</span>
+        <h2 tabindex="-1">Approve this login in Instagram</h2>
+        <p>Open the official Instagram app or website, finish the checkpoint, then return here. Gramclaw will retry once with the same device identity.</p>
+      </div>
+      <button type="button" class="auth-primary" data-auth-action="approved">I've approved it — continue <span>↗</span></button>
+      <button type="button" class="text-button auth-cancel" data-auth-action="cancel">Cancel</button>`;
+  }
+  if (ui.state === "success") {
+    const result = ui.result;
+    return `
+      <div class="auth-success-profile">
+        ${avatar(result.username, result.avatarUrl)}
+        <i aria-hidden="true">✓</i>
+      </div>
+      <div class="auth-card-head centered">
+        <span class="auth-step">Ready on this Mac</span>
+        <h2 tabindex="-1">Connected as @${escapeHtml(result.username)}</h2>
+        <p>Session saved securely · password not saved.</p>
+      </div>
+      <button type="button" class="auth-primary" data-auth-action="sync-30">Sync 30 recent posts <span>↻</span></button>
+      <button type="button" class="auth-secondary-wide" data-auth-action="open-workspace">Open workspace</button>`;
+  }
+  const detail = authErrorCopy(ui.errorCode, ui.errorMessage);
+  const sessionSaved = ui.result?.connected;
+  return `
+    <div class="auth-error-mark" aria-hidden="true">!</div>
+    <div class="auth-card-head">
+      <span class="auth-step">${sessionSaved ? "Session saved · verification pending" : "Sign-in stopped safely"}</span>
+      <h2 tabindex="-1">${escapeHtml(detail.title)}</h2>
+      <p>${escapeHtml(detail.message)}</p>
+    </div>
+    ${sessionSaved ? '<button type="button" class="auth-primary" data-auth-action="verify">Verify session <span>↗</span></button>' : '<button type="button" class="auth-primary" data-auth-action="try-again">Try again <span>↗</span></button>'}
+    <button type="button" class="auth-secondary-wide" data-auth-action="open-workspace">Open local workspace</button>`;
+}
+
+function authErrorCopy(code, fallback) {
+  return {
+    bad_credentials: ["Instagram did not accept those details.", "Check them in the official Instagram app before trying again. Repeated attempts can trigger restrictions."],
+    throttled: ["Stop here and let the account cool down.", "Instagram asked Gramclaw to wait. Your saved device identity is preserved; do not retry repeatedly."],
+    runtime_unavailable: ["Python 3.10+ is needed.", "Install or configure a supported Python runtime, then try direct sign-in again."],
+    keyring_unavailable: ["A secure credential store is unavailable.", "Configure your operating system keyring, or use an archive or signed-in browser instead."],
+    web_cookie_bridge_unavailable: ["The session is saved, but web sync is not verified.", "No password retry is needed. Use Verify session to retry Gramclaw's existing web transport check."],
+    manual_verification_required: ["Finish this checkpoint in Instagram.", "Use the official app or website, then reconnect with Gramclaw."],
+    session_expired: ["The saved session has expired.", "Reconnect with the same saved device identity. Gramclaw will not sign in again in the background."],
+    cancelled: ["Sign-in cancelled.", "Nothing was saved. Your local library is unchanged."],
+    protocol_error: ["Secure sign-in could not finish.", "No credentials were exposed. Try again, or use a signed-in browser or archive."],
+  }[code] ?? ["Sign-in could not finish.", fallback || "Try again, or continue with your local archive."];
+}
+
+async function handleAuthSubmit(event) {
+  if (!["auth-login-form", "auth-code-form"].includes(event.target.id)) return;
+  event.preventDefault();
+  if (event.target.id === "auth-code-form") {
+    const input = event.target.elements.code;
+    let value = input.value;
+    input.value = "";
+    await respondToAuthPrompt(value);
+    value = undefined;
+    return;
+  }
+  const form = event.target;
+  let password = form.elements.password.value;
+  const username = form.elements.username.value.trim().replace(/^@/, "");
+  form.elements.password.value = "";
+  state.authUi = {
+    state: "preparing_runtime",
+    attemptId: null,
+    prompt: null,
+    username,
+    result: null,
+    errorCode: null,
+    errorMessage: null,
+  };
+  renderAuthPanel();
+  const progressTimer = setTimeout(() => {
+    if (state.authUi.state === "preparing_runtime") {
+      state.authUi.state = "signing_in";
+      renderAuthPanel();
+    }
+  }, 900);
+  let controller;
+  try {
+    controller = new AbortController();
+    state.authController = controller;
+    const request = api("/api/auth/login", {
+      method: "POST",
+      signal: controller.signal,
+      body: JSON.stringify({
+        username,
+        password,
+        acceptPrivateApiRisk: true,
+      }),
+    });
+    password = undefined;
+    const result = await request;
+    if (controller.signal.aborted) return;
+    clearTimeout(progressTimer);
+    await applyAuthResponse(result);
+  } catch (error) {
+    clearTimeout(progressTimer);
+    if (error.name === "AbortError") return;
+    showAuthError(error.code, error.message);
+  } finally {
+    if (state.authController === controller) state.authController = null;
+  }
+}
+
+async function handleAuthClick(event) {
+  const element = event.target.closest("[data-auth-action]");
+  if (!element) return;
+  event.preventDefault();
+  const action = element.dataset.authAction;
+  if (action === "toggle-password" || action === "toggle-code") {
+    const input = element.closest(".auth-input").querySelector("input");
+    input.type = input.type === "password" ? "text" : "password";
+    element.textContent = input.type === "password" ? "Show" : "Hide";
+    return;
+  }
+  if (action === "approved") {
+    await respondToAuthPrompt("continue");
+  } else if (action === "cancel" || action === "back") {
+    await cancelAuthAttempt();
+    state.authUi.state = "idle";
+    state.authUi.prompt = null;
+    state.authUi.attemptId = null;
+    renderAuthPanel();
+  } else if (action === "try-again") {
+    state.authUi.state = "idle";
+    state.authUi.errorCode = null;
+    renderAuthPanel();
+  } else if (action === "open-workspace") {
+    await dismissOnboarding();
+  } else if (action === "import-archive") {
+    await dismissOnboarding();
+    toast("Import with: gramclaw import archive <instagram-export.zip>");
+  } else if (action === "use-browser") {
+    await dismissOnboarding();
+    toast("Sign in at instagram.com in a supported browser, then choose Sync.");
+  } else if (action === "sync-30") {
+    await dismissOnboarding();
+    els.sync.classList.add("loading");
+    try {
+      const result = await api("/api/sync", {
+        method: "POST",
+        body: JSON.stringify({ stream: "posts", mode: "cookie", limit: 30 }),
+      });
+      toast(`Synced ${formatNumber(result.counts?.posts ?? 0)} recent posts`);
+      await refreshStatus();
+      await render();
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      els.sync.classList.remove("loading");
+    }
+  } else if (action === "verify") {
+    await verifyConnection(true);
+  }
+}
+
+async function respondToAuthPrompt(value) {
+  const ui = state.authUi;
+  if (!ui.attemptId || !ui.prompt?.id) return;
+  state.authUi.state = "signing_in";
+  renderAuthPanel();
+  let controller;
+  try {
+    controller = new AbortController();
+    state.authController = controller;
+    const request = api(`/api/auth/login/${encodeURIComponent(ui.attemptId)}/respond`, {
+      method: "POST",
+      signal: controller.signal,
+      body: JSON.stringify({ promptId: ui.prompt.id, value }),
+    });
+    value = undefined;
+    const result = await request;
+    if (!controller.signal.aborted) await applyAuthResponse(result);
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    showAuthError(error.code, error.message);
+  } finally {
+    if (state.authController === controller) state.authController = null;
+  }
+}
+
+async function applyAuthResponse(result) {
+  if (result.state?.startsWith("needs_")) {
+    state.authUi.state = result.state;
+    state.authUi.attemptId = result.attemptId;
+    state.authUi.prompt = result.prompt;
+    renderAuthPanel();
+    return;
+  }
+  state.authUi.result = result;
+  state.authUi.attemptId = null;
+  state.authUi.prompt = null;
+  if (result.connected && result.verified) {
+    state.authUi.state = "success";
+    await Promise.all([refreshStatus(), refreshAuthStatus()]);
+  } else if (result.connected) {
+    state.authUi.state = "error";
+    state.authUi.errorCode = result.errorCode ?? "web_cookie_bridge_unavailable";
+  } else {
+    state.authUi.state = "error";
+    state.authUi.errorCode = result.errorCode ?? "protocol_error";
+  }
+  renderAuthPanel();
+}
+
+function showAuthError(code, message) {
+  state.authUi.state = "error";
+  state.authUi.errorCode = code ?? "protocol_error";
+  state.authUi.errorMessage = message;
+  state.authUi.attemptId = null;
+  state.authUi.prompt = null;
+  renderAuthPanel();
+}
+
+async function cancelAuthAttempt() {
+  state.authController?.abort();
+  state.authController = null;
+  if (!state.authUi.attemptId) return;
+  try {
+    await api(`/api/auth/login/${encodeURIComponent(state.authUi.attemptId)}`, {
+      method: "DELETE",
+    });
+  } catch {
+    // Expired and already-finished attempts need no additional UI error.
+  }
+}
+
+function connectionInfo() {
+  const direct = state.authStatus?.direct;
+  if (direct?.available) {
+    return {
+      connected: true,
+      source: "Direct sign-in",
+      username: direct.username ?? state.status?.account?.username,
+      detail: "Connected · session on this Mac",
+      lastVerifiedAt: direct.lastVerifiedAt,
+      direct: true,
+    };
+  }
+  if (state.authStatus?.cookie?.available) {
+    return {
+      connected: true,
+      source: "Signed-in browser",
+      username: state.status?.account?.username,
+      detail: "Connected · browser session",
+      direct: false,
+    };
+  }
+  if (state.authStatus?.graph?.available) {
+    return {
+      connected: true,
+      source: "Instagram Graph",
+      username: state.status?.account?.username,
+      detail: "Connected · Graph credential",
+      direct: false,
+    };
+  }
+  return {
+    connected: false,
+    source: "No live connection",
+    username: state.status?.account?.username,
+    detail: "Local library available",
+    direct: false,
+  };
+}
+
+function renderAccountPill() {
+  if (!els.accountPill) return;
+  const info = connectionInfo();
+  const username = info.username ? `@${info.username}` : info.connected ? "Instagram" : "Connect Instagram";
+  els.accountPill.classList.toggle("connected", info.connected);
+  els.accountPill.innerHTML = `
+    ${info.connected && info.username ? avatar(info.username, state.status?.account?.avatar_url) : "<span class=\"account-placeholder\">g</span>"}
+    <i aria-hidden="true"></i>
+    <span><strong>${escapeHtml(username)}</strong><small>${escapeHtml(info.detail)}</small></span>`;
+}
+
+function openConnectionDialog() {
+  const info = connectionInfo();
+  els.connectionContent.innerHTML = `
+    <div class="connection-sheet">
+      <p class="eyebrow">Live connection</p>
+      <h2 id="connection-title">${info.connected ? escapeHtml(`@${info.username ?? "Instagram"}`) : "Connect Instagram"}</h2>
+      <p>${escapeHtml(info.source)} · ${escapeHtml(info.detail)}</p>
+      ${info.lastVerifiedAt ? `<dl><dt>Last verified</dt><dd>${escapeHtml(relativeTime(info.lastVerifiedAt))}</dd></dl>` : ""}
+      <div class="connection-actions">
+        ${info.connected ? '<button class="secondary-button" data-connection-action="verify">Verify session</button>' : ""}
+        <button class="secondary-button" data-connection-action="reconnect">${info.connected ? "Reconnect" : "Connect Instagram"}</button>
+        ${info.direct ? '<button class="text-button danger" data-connection-action="disconnect">Disconnect</button>' : ""}
+      </div>
+      <p class="connection-local"><i></i> Your SQLite library stays on this machine whether or not live sync is connected.</p>
+    </div>`;
+  els.connectionDialog.showModal();
+}
+
+async function handleConnectionAction(action) {
+  if (action === "reconnect") {
+    els.connectionDialog.close();
+    showOnboarding();
+  } else if (action === "verify") {
+    await verifyConnection(false);
+  } else if (action === "disconnect") {
+    try {
+      await api("/api/auth/logout", { method: "POST", body: "{}" });
+      els.connectionDialog.close();
+      await refreshAuthStatus();
+      toast("Disconnected on this machine; local data remains.");
+      if (isEmptyWorkspace()) showOnboarding();
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+}
+
+async function verifyConnection(showInOnboarding) {
+  try {
+    const result = await api("/api/auth/verify", { method: "POST", body: "{}" });
+    await refreshAuthStatus();
+    if (result.verified) {
+      toast(`Verified @${result.username}`);
+      if (showInOnboarding) {
+        state.authUi.result = result;
+        state.authUi.state = "success";
+        renderAuthPanel();
+      } else {
+        els.connectionDialog.close();
+      }
+    } else if (showInOnboarding) {
+      state.authUi.result = result;
+      showAuthError(result.errorCode, result.message);
+    } else {
+      toast(result.message ?? "Session saved, but web sync is not verified.");
+    }
+  } catch (error) {
+    if (showInOnboarding) showAuthError(error.code, error.message);
+    else toast(error.message);
+  }
 }
 
 async function setView(view) {
@@ -880,7 +1384,11 @@ function gradientFor(value) {
 async function api(path, options) {
   const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
   const payload = await response.json();
-  if (!response.ok || payload.ok === false) throw new Error(payload.error || `Request failed (${response.status})`);
+  if (!response.ok || payload.ok === false) {
+    const error = new Error(payload.error || payload.message || `Request failed (${response.status})`);
+    error.code = payload.code || payload.errorCode || "protocol_error";
+    throw error;
+  }
   return payload;
 }
 

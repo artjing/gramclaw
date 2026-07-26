@@ -15,6 +15,14 @@ import {
   graphSendMessage,
 } from "./graph.js";
 import { authStatus, runWebAction, syncLive, uploadWebPhoto, webWhoAmI } from "./live.js";
+import {
+  completeInstagramLogin,
+  logoutInstagramSession,
+  prepareInstagramAuth,
+  PRIVATE_API_WARNING,
+  startInstagramLogin,
+  verifyInstagramSession,
+} from "./instagram-auth.js";
 import { fetchMedia } from "./media.js";
 import {
   addBoardItems,
@@ -46,6 +54,7 @@ import {
   searchDms,
 } from "./queries.js";
 import { serve } from "./server.js";
+import { promptHidden, promptLine, readExactlyOneLine } from "./terminal-prompt.js";
 import { printValue } from "./utils.js";
 
 export async function runCli(argv) {
@@ -103,8 +112,21 @@ export async function runCli(argv) {
     .action(async (_, command) => output(command, await authStatus(globals(command))));
   auth
     .command("whoami")
-    .description("Resolve the Instagram account behind browser cookies")
+    .description("Resolve the Instagram account behind the active live session")
     .action(async (_, command) => output(command, await webWhoAmI(globals(command))));
+  configureLoginCommand(auth.command("login [username]"), handleInstagramLogin);
+  auth
+    .command("verify")
+    .description("Verify the saved direct session against Instagram")
+    .option("--no-verify-web", "Skip the existing web transport check (development only)")
+    .action(async (options, command) => {
+      const result = await verifyInstagramSession({
+        verifyWeb: options.verifyWeb,
+        onState: (state) => authProgress(state),
+      });
+      printAuthResult(command, result);
+      if (!result.verified && options.verifyWeb !== false) process.exitCode = 2;
+    });
   auth
     .command("use <transport>")
     .description("Set preferred transport: auto, cookie, graph, or archive")
@@ -115,6 +137,22 @@ export async function runCli(argv) {
         config.transport.preferred = transport;
         return config;
       }));
+    });
+
+  configureLoginCommand(program.command("login [username]"), handleInstagramLogin);
+  program
+    .command("logout")
+    .description("Disconnect the saved direct Instagram session on this machine")
+    .action(async (_, command) => {
+      const result = await logoutInstagramSession();
+      if (command.optsWithGlobals().json) {
+        output(command, {
+          ...result,
+          message: "Disconnected on this machine. Other Instagram devices remain signed in.",
+        });
+      } else {
+        process.stdout.write("Disconnected on this machine.\nOther Instagram devices remain signed in.\n");
+      }
     });
 
   const archive = program.command("archive").description("Find Instagram data exports");
@@ -516,6 +554,9 @@ export async function runCli(argv) {
     .command("set <path> <value>")
     .description("Set a dotted config key")
     .action((path, value, _, command) => {
+      if (path === "auth.instagram" || path.startsWith("auth.instagram.")) {
+        throw new Error("Direct Instagram auth metadata is managed by `gramclaw login` and `gramclaw logout`.");
+      }
       output(command, updateConfig((current) => {
         const parts = path.split(".").filter(Boolean);
         if (!parts.length) throw new Error("Config path cannot be empty.");
@@ -587,4 +628,111 @@ function parseConfigValue(value) {
   } catch {
     return value;
   }
+}
+
+function configureLoginCommand(command, handler) {
+  return command
+    .description("Connect Instagram with a username and password")
+    .option("--accept-private-api-risk", "Accept the unofficial private API risk")
+    .option("--password-stdin", "Read exactly one password line from stdin")
+    .option("--no-verify-web", "Skip the existing web transport check (development only)")
+    .action(handler);
+}
+
+async function handleInstagramLogin(username, options, command) {
+  const interactive = Boolean(process.stdin.isTTY);
+  process.stderr.write(`\n${PRIVATE_API_WARNING}\n\n`);
+  if (!options.acceptPrivateApiRisk) {
+    if (!interactive) {
+      throw new Error("Non-interactive sign-in requires --accept-private-api-risk.");
+    }
+    const accepted = await promptLine("Continue? [y/N] ");
+    if (!/^y(?:es)?$/i.test(accepted)) throw new Error("Sign-in was cancelled.");
+  }
+  let normalizedUsername = String(username ?? "").trim().replace(/^@/, "");
+  if (!normalizedUsername) {
+    if (!interactive) throw new Error("Non-interactive sign-in requires a username.");
+    normalizedUsername = (await promptLine("Instagram username: ")).replace(/^@/, "");
+  }
+  const runtime = await prepareInstagramAuth({
+    onState: (state) => authProgress(state),
+  });
+  let password;
+  if (options.passwordStdin) {
+    password = await readExactlyOneLine();
+  } else {
+    if (!interactive) {
+      throw new Error("Non-interactive sign-in requires --password-stdin.");
+    }
+    password = await promptHidden("Password: ");
+  }
+  const attempt = await startInstagramLogin({
+    runtime,
+    username: normalizedUsername,
+    password,
+  });
+  password = undefined;
+  let sidecarResult;
+  const interrupt = () => attempt.cancel();
+  process.once("SIGINT", interrupt);
+  try {
+    while (!sidecarResult) {
+      const message = await attempt.nextMessage();
+      if (message.type === "state") {
+        authProgress(message.state, normalizedUsername);
+        continue;
+      }
+      if (message.type === "error") {
+        const error = new Error(message.message);
+        error.code = message.code;
+        throw error;
+      }
+      if (message.type === "prompt") {
+        if (!interactive) {
+          attempt.cancel();
+          throw new Error("Instagram requested an interactive verification step; rerun this command in a terminal.");
+        }
+        const label = message.kind === "two_factor"
+          ? "Two-factor code: "
+          : message.kind === "challenge_code"
+            ? `${message.channel === "sms" ? "SMS" : "Email"} challenge code: `
+            : "Press Enter after approving the login in Instagram: ";
+        const value = message.kind === "manual_approval"
+          ? await promptLine(label)
+          : await promptHidden(label);
+        attempt.respond(message.id, message.kind === "manual_approval" ? "continue" : value);
+        continue;
+      }
+      if (message.type === "result") sidecarResult = message;
+    }
+  } finally {
+    process.off("SIGINT", interrupt);
+  }
+  const result = await completeInstagramLogin(sidecarResult, {
+    verifyWeb: options.verifyWeb,
+  });
+  printAuthResult(command, result);
+  if (!result.verified && options.verifyWeb !== false) process.exitCode = 2;
+}
+
+function authProgress(state, username) {
+  if (state === "preparing_runtime") process.stderr.write("Preparing secure sign-in…\n");
+  if (state === "signing_in") process.stderr.write(`Signing in as @${username ?? "account"}…\n`);
+}
+
+function printAuthResult(command, result) {
+  if (command.optsWithGlobals().json) {
+    output(command, result);
+    return;
+  }
+  if (result.connected) {
+    process.stdout.write(`\nConnected as @${result.username}.\n`);
+    process.stdout.write("Session: system credential store\nPassword: not saved\n");
+    if (!result.verified) {
+      process.stdout.write(`Verification: pending — ${result.message ?? "run `gramclaw auth verify`"}\n`);
+    }
+    process.stdout.write("\nNext: gramclaw sync posts --mode cookie --limit 30\n");
+    return;
+  }
+  output(command, result);
 }

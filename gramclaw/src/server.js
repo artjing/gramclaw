@@ -12,7 +12,13 @@ import {
   startAnalysis,
 } from "./analysis.js";
 import { graphComment, graphPublish, graphSendMessage } from "./graph.js";
-import { runWebAction, syncLive, uploadWebPhoto } from "./live.js";
+import { authStatus, runWebAction, syncLive, uploadWebPhoto } from "./live.js";
+import {
+  completeInstagramLogin,
+  logoutInstagramSession,
+  startInstagramLogin,
+  verifyInstagramSession,
+} from "./instagram-auth.js";
 import {
   addBoardItems,
   addPostsToCollection,
@@ -56,14 +62,22 @@ export async function serve(options = {}) {
   }
   const db = getDb({ seedDemo: Boolean(options.demo) });
   resumeAnalysis({ db });
+  const authContext = createAuthContext({ host, options });
   const server = createServer((request, response) => {
-    handleRequest(request, response).catch((error) => {
-      sendJson(response, 500, {
+    handleRequest(request, response, authContext).catch((error) => {
+      const authRequest = String(request.url ?? "").startsWith("/api/auth/");
+      sendJson(response, Number(error?.status ?? 500), {
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        ...(authRequest
+          ? {
+              code: error?.code ?? "protocol_error",
+              error: error?.safeMessage ?? "The authentication request could not be completed.",
+            }
+          : { error: error instanceof Error ? error.message : String(error) }),
       });
     });
   });
+  server.once("close", () => authContext.cleanup());
   await new Promise((resolvePromise, reject) => {
     server.once("error", reject);
     server.listen(port, host, resolvePromise);
@@ -75,14 +89,14 @@ export async function serve(options = {}) {
   return { server, url, host, port: actualPort };
 }
 
-async function handleRequest(request, response) {
+async function handleRequest(request, response, context) {
   const url = new URL(request.url ?? "/", "http://localhost");
   if (!authorize(request, url)) {
     sendJson(response, 401, { ok: false, error: "Unauthorized" });
     return;
   }
   if (url.pathname.startsWith("/api/")) {
-    await handleApi(request, response, url);
+    await handleApi(request, response, url, context);
     return;
   }
   if (url.pathname.startsWith("/media/")) {
@@ -100,10 +114,14 @@ function authorize(request, url) {
     || parseCookies(request.headers.cookie ?? "").gramclaw_token === token;
 }
 
-async function handleApi(request, response, url) {
+async function handleApi(request, response, url, context) {
   const db = getDb();
   const method = request.method ?? "GET";
   const segments = url.pathname.split("/").filter(Boolean).slice(1);
+  if (segments[0] === "auth") {
+    await handleAuthApi(request, response, method, segments.slice(1), context);
+    return;
+  }
   if (method === "GET" && segments[0] === "status") {
     sendJson(response, 200, getStatus(db));
     return;
@@ -380,15 +398,31 @@ function mimeType(path) {
 }
 
 async function readBody(request) {
+  return readBodyWithOptions(request);
+}
+
+async function readBodyWithOptions(request, options = {}) {
+  if (options.requireJson && !String(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+    throw authHttpError(415, "invalid_request", "Authentication requests must use JSON.");
+  }
   const chunks = [];
   let length = 0;
   for await (const chunk of request) {
     length += chunk.length;
-    if (length > 1_000_000) throw new Error("Request body is too large.");
+    if (length > Number(options.limit ?? 1_000_000)) {
+      throw options.requireJson
+        ? authHttpError(413, "invalid_request", "Authentication request body is too large.")
+        : new Error("Request body is too large.");
+    }
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch (error) {
+    if (options.requireJson) throw authHttpError(400, "invalid_request", "Authentication request JSON is invalid.");
+    throw error;
+  }
 }
 
 function sendJson(response, status, payload) {
@@ -411,7 +445,260 @@ function parseCookies(header) {
 }
 
 function isLoopback(host) {
-  return ["127.0.0.1", "localhost", "::1"].includes(host);
+  const normalized = String(host).toLowerCase().replace(/^\[|\]$/g, "");
+  return ["127.0.0.1", "localhost", "::1"].includes(normalized);
+}
+
+function createAuthContext({ host, options }) {
+  const api = options.instagramAuth ?? {
+    completeLogin: completeInstagramLogin,
+    logout: logoutInstagramSession,
+    startLogin: startInstagramLogin,
+    status: authStatus,
+    verify: verifyInstagramSession,
+  };
+  const attempts = new Map();
+  const starts = [];
+  const attemptTimeoutMs = Number(options.authAttemptTimeoutMs ?? 600_000);
+  const rateWindowMs = Number(options.authRateWindowMs ?? 300_000);
+  const rateLimit = Number(options.authRateLimit ?? 3);
+  let starting = false;
+  return {
+    api,
+    attempts,
+    attemptTimeoutMs,
+    host,
+    rateLimit,
+    rateWindowMs,
+    starts,
+    get starting() {
+      return starting;
+    },
+    set starting(value) {
+      starting = value;
+    },
+    cleanup() {
+      for (const record of attempts.values()) record.attempt.cancel();
+      attempts.clear();
+    },
+  };
+}
+
+async function handleAuthApi(request, response, method, segments, context) {
+  validateAuthBoundary(request, method, context);
+  if (method === "GET" && segments[0] === "status" && segments.length === 1) {
+    const status = await context.api.status();
+    sendJson(response, 200, {
+      ok: true,
+      ...(status?.direct ? status : { direct: status }),
+    });
+    return;
+  }
+  if (method === "POST" && segments[0] === "login" && segments.length === 1) {
+    if (!isLoopback(context.host)) {
+      throw authHttpError(403, "remote_login_disabled", "Direct password sign-in is available only on the loopback listener.");
+    }
+    pruneAuthStarts(context);
+    if (context.starts.length >= context.rateLimit) {
+      throw authHttpError(429, "throttled", "Too many sign-in attempts. Stop and wait before trying again.");
+    }
+    if (context.starting || activeAttempt(context)) {
+      throw authHttpError(409, "attempt_active", "Another Instagram sign-in attempt is already active.");
+    }
+    context.starts.push(Date.now());
+    context.starting = true;
+    let attempt;
+    let password;
+    let clientGone = false;
+    const abandonAttempt = () => {
+      clientGone = true;
+      if (attempt) {
+        attempt.cancel();
+        context.attempts.delete(attempt.id);
+      }
+    };
+    request.once("aborted", abandonAttempt);
+    response.once("close", () => {
+      if (!response.writableEnded) abandonAttempt();
+    });
+    try {
+      const body = await readBodyWithOptions(request, { limit: 16_384, requireJson: true });
+      if (body.acceptPrivateApiRisk !== true) {
+        throw authHttpError(400, "risk_not_accepted", "Accept the private API risk before connecting.");
+      }
+      const username = String(body.username ?? "").trim().replace(/^@/, "");
+      password = body.password;
+      delete body.password;
+      if (!username || typeof password !== "string" || !password) {
+        throw authHttpError(400, "invalid_request", "Username and password are required.");
+      }
+      attempt = await context.api.startLogin({ username, password });
+    } finally {
+      password = undefined;
+      context.starting = false;
+    }
+    if (clientGone) {
+      attempt.cancel();
+      return;
+    }
+    const record = {
+      attempt,
+      expiresAt: Date.now() + context.attemptTimeoutMs,
+    };
+    context.attempts.set(attempt.id, record);
+    const message = await attempt.nextMessage({ actionable: true });
+    await sendAttemptMessage(response, context, record, message);
+    return;
+  }
+  if (
+    method === "POST"
+    && segments[0] === "login"
+    && segments[1]
+    && segments[2] === "respond"
+    && segments.length === 3
+  ) {
+    const record = getAttempt(context, segments[1]);
+    response.once("close", () => {
+      if (!response.writableEnded) {
+        record.attempt.cancel();
+        context.attempts.delete(record.attempt.id);
+      }
+    });
+    const body = await readBodyWithOptions(request, { limit: 4_096, requireJson: true });
+    let value = body.value;
+    const promptId = String(body.promptId ?? "");
+    delete body.value;
+    if (!promptId || typeof value !== "string") {
+      value = undefined;
+      throw authHttpError(400, "invalid_request", "A matching prompt response is required.");
+    }
+    record.attempt.respond(promptId, value);
+    value = undefined;
+    record.expiresAt = Date.now() + context.attemptTimeoutMs;
+    const message = await record.attempt.nextMessage({ actionable: true });
+    await sendAttemptMessage(response, context, record, message);
+    return;
+  }
+  if (
+    method === "DELETE"
+    && segments[0] === "login"
+    && segments[1]
+    && segments.length === 2
+  ) {
+    const record = getAttempt(context, segments[1]);
+    record.attempt.cancel();
+    context.attempts.delete(record.attempt.id);
+    sendJson(response, 200, { ok: true, cancelled: true });
+    return;
+  }
+  if (method === "POST" && segments[0] === "verify" && segments.length === 1) {
+    await readBodyWithOptions(request, { limit: 1_024, requireJson: true });
+    sendJson(response, 200, await context.api.verify());
+    return;
+  }
+  if (method === "POST" && segments[0] === "logout" && segments.length === 1) {
+    await readBodyWithOptions(request, { limit: 1_024, requireJson: true });
+    sendJson(response, 200, {
+      ...await context.api.logout(),
+      message: "Disconnected on this machine. Other Instagram devices remain signed in.",
+    });
+    return;
+  }
+  throw authHttpError(404, "not_found", "Authentication route not found.");
+}
+
+async function sendAttemptMessage(response, context, record, message) {
+  if (message.type === "prompt") {
+    sendJson(response, 202, {
+      ok: true,
+      attemptId: record.attempt.id,
+      state: {
+        two_factor: "needs_2fa",
+        challenge_code: "needs_challenge_code",
+        manual_approval: "needs_manual_approval",
+      }[message.kind] ?? "needs_manual_approval",
+      prompt: {
+        id: message.id,
+        kind: message.kind,
+        channel: message.channel,
+        maskedDestination: message.maskedDestination,
+        ...(message.instruction ? { instruction: message.instruction } : {}),
+      },
+    });
+    return;
+  }
+  context.attempts.delete(record.attempt.id);
+  if (message.type === "error") {
+    throw authHttpError(
+      message.code === "throttled" ? 429 : 400,
+      message.code,
+      message.message,
+    );
+  }
+  const result = await context.api.completeLogin(message);
+  sendJson(response, 200, result);
+}
+
+function validateAuthBoundary(request, method, context) {
+  const hostHeader = String(request.headers.host ?? "");
+  let requestHost;
+  try {
+    requestHost = new URL(`http://${hostHeader}`).hostname;
+  } catch {
+    throw authHttpError(403, "invalid_origin", "Authentication request host is invalid.");
+  }
+  const hostMatches = requestHost === context.host
+    || (isLoopback(requestHost) && isLoopback(context.host));
+  if (!hostHeader || !hostMatches) {
+    throw authHttpError(403, "invalid_origin", "Authentication request host is not allowed.");
+  }
+  if (method !== "GET") {
+    const originHeader = String(request.headers.origin ?? "");
+    let origin;
+    try {
+      origin = new URL(originHeader);
+    } catch {
+      throw authHttpError(403, "invalid_origin", "Authentication request origin is required.");
+    }
+    if (origin.protocol !== "http:" || origin.host !== hostHeader) {
+      throw authHttpError(403, "invalid_origin", "Authentication request origin is not allowed.");
+    }
+  }
+}
+
+function activeAttempt(context) {
+  for (const [id, record] of context.attempts) {
+    if (record.expiresAt <= Date.now()) {
+      record.attempt.cancel();
+      context.attempts.delete(id);
+      continue;
+    }
+    return record;
+  }
+  return null;
+}
+
+function getAttempt(context, id) {
+  const record = context.attempts.get(String(id));
+  if (!record || record.expiresAt <= Date.now()) {
+    if (record) record.attempt.cancel();
+    context.attempts.delete(String(id));
+    throw authHttpError(404, "attempt_not_found", "Sign-in attempt was not found or has expired.");
+  }
+  return record;
+}
+
+function pruneAuthStarts(context) {
+  const cutoff = Date.now() - context.rateWindowMs;
+  while (context.starts[0] < cutoff) context.starts.shift();
+}
+
+function authHttpError(status, code, safeMessage) {
+  const error = new Error(safeMessage);
+  error.status = status;
+  error.code = code;
+  error.safeMessage = safeMessage;
+  return error;
 }
 
 function openUrl(url) {

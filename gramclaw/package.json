@@ -10,6 +10,7 @@
   "files": [
     "bin/",
     "native/",
+    "python/",
     "src/",
     "web/",
     "README.md",
@@ -17,7 +18,9 @@
   ],
   "scripts": {
     "start": "node bin/gramclaw.mjs",
-    "test": "node --test test/*.test.js",
+    "test": "npm run test:node && npm run test:python",
+    "test:node": "node --test test/*.test.js",
+    "test:python": "python3 python/verify_lock.py && python3 -m unittest discover -s python/tests -v",
     "smoke": "node bin/gramclaw.mjs --home ./.smoke-home init --demo --json && node bin/gramclaw.mjs --home ./.smoke-home search posts studio --json && node bin/gramclaw.mjs --home ./.smoke-home graph summary --json"
   },
   "dependencies": {

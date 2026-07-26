@@ -34,6 +34,7 @@ notes, and export the board as an image or PDF.
 | Smart Saved Library | Automatic topic clusters, custom collections and tags, duplicate detection, and an Unorganized review queue |
 | Boards | Moodboards assembled from results with manual arrangement, notes, and PNG/PDF export |
 | Complete archive memory | Posts, comments, DMs, relationships, and media normalized into SQLite and searchable with FTS5 |
+| Direct sign-in | Type a username and password locally; the password is discarded and the reusable session stays in the operating-system credential store |
 | Automation-ready CLI | The same local memory exposed through a JSON-first CLI, backups, caching, and guarded publishing |
 
 ## Install
@@ -54,7 +55,19 @@ gramclaw import archive ~/Downloads/instagram-export.zip --json
 gramclaw serve --open
 ```
 
-See `gramclaw/README.md` for archive import, live adapters, guarded publishing,
+Or connect bounded live sync directly:
+
+```bash
+gramclaw login
+gramclaw serve --open
+```
+
+Direct sign-in uses Instagram's unofficial private API and can trigger
+challenges, restrictions, or bans. It is optional; archive-only use remains
+fully available.
+
+See `gramclaw/README.md` for direct sign-in and its credential-store design,
+archive import, live adapters, guarded publishing,
 private media analysis, visual search, smart Saved collections, boards, media
 caching, backup, and complete CLI documentation.
 

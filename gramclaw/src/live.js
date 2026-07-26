@@ -24,6 +24,13 @@ import {
   stableId,
   timestampToIso,
 } from "./utils.js";
+import {
+  COOKIE_ALLOWLIST,
+  directAuthStatus,
+  DIRECT_CREDENTIAL_SOURCE,
+  loadDirectCredentials,
+  mergeDirectCookies,
+} from "./instagram-auth.js";
 
 const WEB_BASE = "https://www.instagram.com";
 const WEB_APP_ID = "936619743392459";
@@ -50,7 +57,11 @@ export async function authStatus(options = {}) {
       missing: ["sessionid", "csrftoken"],
     };
   }
-  return { cookie, graph: graphStatus(options) };
+  return {
+    cookie,
+    direct: await directAuthStatus(options),
+    graph: graphStatus(options),
+  };
 }
 
 export async function resolveCredentials(options = {}) {
@@ -73,8 +84,19 @@ export async function resolveCredentials(options = {}) {
       warnings: [],
     };
   }
+  let directWarning;
+  if (!Object.values(explicit).some(Boolean)) {
+    try {
+      const direct = await (options.directCredentialLoader ?? loadDirectCredentials)(options);
+      if (direct?.sessionId && direct?.csrfToken) return direct;
+    } catch (error) {
+      directWarning = error?.code && error instanceof Error
+        ? error.message
+        : "The saved direct session is unavailable.";
+    }
+  }
   const browsers = normalizeBrowserSources(options.cookieSource);
-  const result = await getCookies({
+  const result = await (options.browserCookieLoader ?? getCookies)({
     url: `${WEB_BASE}/`,
     names: ["sessionid", "csrftoken", "ds_user_id", "mid", "ig_did", "rur", "datr", "dpr"],
     ...(browsers.length ? { browsers } : {}),
@@ -103,7 +125,7 @@ export async function resolveCredentials(options = {}) {
     userId,
     cookieHeader: toCookieHeader(cookies, { dedupeByName: true, sort: "none" }),
     source: cookies[0]?.source?.browser ?? (options.cookieFile ? "cookie-file" : "browser"),
-    warnings: result.warnings,
+    warnings: [...result.warnings, ...(directWarning ? [directWarning] : [])],
   };
 }
 
@@ -114,7 +136,7 @@ function normalizeBrowserSources(value) {
     .filter((item) => ["chrome", "edge", "firefox", "safari"].includes(item));
 }
 
-async function webRequest(path, options = {}) {
+export async function webRequest(path, options = {}) {
   const credentials = options.credentials ?? await resolveCredentials(options);
   if (!credentials.sessionId || !credentials.csrfToken) {
     throw new Error("Instagram web session not found. Sign in in a supported browser or set GRAMCLAW_SESSIONID and GRAMCLAW_CSRFTOKEN.");
@@ -151,6 +173,16 @@ async function webRequest(path, options = {}) {
     body,
     signal: AbortSignal.timeout(Number(options.timeout ?? 30_000)),
   });
+  if (credentials.source === DIRECT_CREDENTIAL_SOURCE) {
+    const rotatedCookies = parseSetCookieHeaders(response.headers);
+    if (Object.keys(rotatedCookies).length) {
+      try {
+        await (options.directCookieMerger ?? mergeDirectCookies)(rotatedCookies, options);
+      } catch {
+        // The live request remains authoritative; a later verify can retry rotation persistence.
+      }
+    }
+  }
   const text = await response.text();
   let payload;
   try {
@@ -159,6 +191,17 @@ async function webRequest(path, options = {}) {
     payload = { raw: text };
   }
   if (!response.ok || payload.status === "fail") {
+    if (credentials.source === DIRECT_CREDENTIAL_SOURCE) {
+      if (response.status === 401 || payload.message === "login_required") {
+        const error = new Error("Session expired; run `gramclaw login` to reconnect with the same saved device identity.");
+        error.code = "session_expired";
+        error.status = response.status;
+        throw error;
+      }
+      const error = new Error(`Instagram web API request failed (HTTP ${response.status}).`);
+      error.status = response.status;
+      throw error;
+    }
     const reason = payload.message ?? payload.error_title ?? payload.raw ?? `HTTP ${response.status}`;
     const error = new Error(`Instagram web API: ${reason}`);
     error.status = response.status;
@@ -185,7 +228,7 @@ export async function webWhoAmI(options = {}) {
         displayName: data.first_name ?? data.full_name ?? data.name ?? data.username ?? "",
         biography: data.biography ?? "",
         avatarUrl: data.profile_pic_url ?? data.profile_pic_url_hd ?? null,
-        raw: payload,
+        ...(credentials.source === DIRECT_CREDENTIAL_SOURCE ? {} : { raw: payload }),
         credentialSource: credentials.source,
       };
     } catch (error) {
@@ -193,6 +236,30 @@ export async function webWhoAmI(options = {}) {
     }
   }
   throw lastError;
+}
+
+function parseSetCookieHeaders(headers) {
+  const values = typeof headers.getSetCookie === "function"
+    ? headers.getSetCookie()
+    : headers.get("set-cookie")
+      ? [headers.get("set-cookie")]
+      : [];
+  const cookies = {};
+  for (const header of values) {
+    for (const candidate of splitCombinedSetCookie(header)) {
+      const pair = candidate.split(";", 1)[0];
+      const separator = pair.indexOf("=");
+      if (separator <= 0) continue;
+      const name = pair.slice(0, separator).trim();
+      const value = pair.slice(separator + 1).trim();
+      if (COOKIE_ALLOWLIST.includes(name) && value) cookies[name] = value;
+    }
+  }
+  return cookies;
+}
+
+function splitCombinedSetCookie(value) {
+  return String(value ?? "").split(/,(?=\s*[A-Za-z0-9_]+=)/);
 }
 
 export async function syncLive(stream, options = {}) {

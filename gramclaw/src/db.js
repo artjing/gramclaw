@@ -439,7 +439,11 @@ export function defaultAccount(db) {
 
 export function ensureAccount(db, input = {}) {
   const username = String(input.username ?? "instagram_user").replace(/^@/, "").toLowerCase();
-  const id = input.id ?? stableId("acct", input.externalUserId ?? username);
+  const existing = input.externalUserId
+    ? db.prepare("select id from accounts where external_user_id=? or username=? limit 1")
+      .get(String(input.externalUserId), username)
+    : db.prepare("select id from accounts where username=? limit 1").get(username);
+  const id = existing?.id ?? input.id ?? stableId("acct", input.externalUserId ?? username);
   const now = nowIso();
   db.prepare(`
     insert into accounts (
@@ -477,6 +481,13 @@ export function ensureAccount(db, input = {}) {
     source: input.transport ?? "archive",
   });
   return db.prepare("select * from accounts where id=?").get(id);
+}
+
+export function setDefaultAccount(db, accountId) {
+  transaction(db, () => {
+    db.prepare("update accounts set is_default=case when id=? then 1 else 0 end").run(accountId);
+  });
+  return db.prepare("select * from accounts where id=?").get(accountId) ?? null;
 }
 
 export function upsertProfile(db, input) {

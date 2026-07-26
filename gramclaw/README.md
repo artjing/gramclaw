@@ -7,6 +7,7 @@ It is inspired by the local-first architecture of Birdclaw, translated to Instag
 ## Install
 
 Node.js 22.13 or newer is required.
+Direct Instagram sign-in also requires Python 3.10 or newer.
 
 ```bash
 npm install -g ./gramclaw-1.1.0.tgz
@@ -34,6 +35,77 @@ gramclaw import archive ~/Downloads/instagram-export.zip \
 ```
 
 Imports are idempotent and merge-safe by default. Add `--restore` only when the selected archive slices should exactly replace prior archive rows.
+
+## Direct Instagram sign-in
+
+Connect live sync by typing the username and password for an account you
+control:
+
+```bash
+gramclaw login
+# equivalent:
+gramclaw auth login
+
+gramclaw auth status --json
+gramclaw auth verify
+gramclaw logout
+```
+
+> Direct sign-in uses Instagram's unofficial private API. Instagram may challenge, restrict, or ban accounts that use it; continue only with an account you control.
+
+Gramclaw uses a short-lived Python sidecar pinned to `instagrapi==2.16.25`.
+The first direct-auth operation creates a hash-locked runtime under
+`~/.gramclaw/runtime/instagram-auth/2.16.25/`. The username, password, 2FA
+code, and challenge answers travel only through inherited process pipes. The
+password is discarded after sign-in and is never accepted through an argument
+or environment variable.
+
+The reusable `Client.get_settings()` session is stored in the operating
+system credential store through `keyring==25.7.0` (Keychain on macOS, the
+platform credential backend on Windows, or Secret Service on Linux).
+`config.json` contains only the non-secret credential reference, connected
+username/user ID, and real verification timestamps. Session cookies and
+authorization data are never written to SQLite, config, JSON output, logs, or
+Gramclaw backups.
+
+Authenticator, SMS, recovery-code, legacy email/SMS challenge, and official
+app approval branches are supported. Forced password changes, selfie checks,
+captchas, and unsupported checkpoints must be completed in the official
+Instagram app or website. Gramclaw does not retry a password login in the
+background.
+
+For non-interactive use, the only password input is one stdin line:
+
+```bash
+your-secret-manager read instagram-password |
+  gramclaw login example \
+    --accept-private-api-risk \
+    --password-stdin \
+    --json
+```
+
+There is deliberately no `--password` flag or `GRAMCLAW_PASSWORD` variable.
+`gramclaw auth status` is local and makes no Instagram request;
+`gramclaw auth verify` explicitly checks the saved session. `gramclaw logout`
+removes only Gramclaw's keyring session and safe auth metadata. It leaves
+SQLite, media, archives, Graph credentials, signed-in browsers, and other
+Instagram devices untouched.
+
+The local web app offers the same sign-in flow only on a loopback listener.
+Password login is disabled when remote web binding is enabled, even when
+`GRAMCLAW_WEB_TOKEN` is configured. A successful connection offers a bounded
+“Sync 30 recent posts” action, but never starts a hidden or large sync.
+
+Archive import, signed-in browser cookies, and the official Graph transport
+remain independent alternatives. Local/archive features never require direct
+sign-in.
+
+Release acceptance includes one controlled-account manual gate that CI does
+not run: confirm that `sessionid`/`csrftoken` established by the pinned
+instagrapi sidecar are accepted by Gramclaw's existing
+`www.instagram.com` `webWhoAmI()` transport, then exercise small profile,
+posts, Saved, and DM reads. Stop on challenge loops, cooldowns, or account
+restrictions; never brute-force the check.
 
 ## Local web workspace
 
@@ -200,6 +272,8 @@ gramclaw backup sync \
 ~/.gramclaw/
   gramclaw.sqlite
   config.json
+  runtime/
+    instagram-auth/2.16.25/  # pinned packages only; no account secret
   media/
     originals/archive/
     originals/live/
@@ -210,7 +284,9 @@ gramclaw backup sync \
 ```
 
 Override the root per invocation with `--home <path>` or globally with `GRAMCLAW_HOME`.
+The operating-system credential-store record is machine-local and is not
+included in this directory or restored from a backup.
 
 ## Important
 
-Gramclaw is an independent tool and is not affiliated with Instagram or Meta. Archive import and the official Graph transport are the durable paths. Cookie transport uses undocumented web endpoints and should be used gently, on accounts you control, in accordance with applicable platform terms and law.
+Gramclaw is an independent tool and is not affiliated with Instagram or Meta. Archive import and the official Graph transport are the durable paths. Direct sign-in and cookie transport use unofficial or undocumented endpoints and should be used gently, on accounts you control, in accordance with applicable platform terms and law.
