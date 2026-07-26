@@ -9,7 +9,7 @@ It is inspired by the local-first architecture of Birdclaw, translated to Instag
 Node.js 22.13 or newer is required.
 
 ```bash
-npm install -g ./gramclaw-1.0.0.tgz
+npm install -g ./gramclaw-1.1.0.tgz
 gramclaw init --demo
 gramclaw serve --open
 ```
@@ -44,7 +44,9 @@ gramclaw serve --open
 The server listens on `127.0.0.1:4667` by default. It includes:
 
 - Home feed for cached posts, reels, carousels, and stories
-- Saved and liked review lanes
+- Ask search across captions, OCR, objects, colors, style, and visual embeddings
+- Smart Saved topic clusters, custom collections, tags, bulk organization, duplicate review, and an Unorganized queue
+- Freeform moodboards with notes, rearrangement, and image/PDF export
 - Full-text search across captions, comments, and DMs
 - Priority inbox combining comments and DMs
 - DM conversation reader
@@ -138,6 +140,46 @@ Imported archive media is copied into `~/.gramclaw/media/originals/archive`. Liv
 ```bash
 gramclaw media fetch --limit 200 --concurrency 3 --delay-ms 250 --json
 ```
+
+## Private visual analysis
+
+Build a searchable visual index after importing or fetching media:
+
+```bash
+gramclaw analyze run --provider local --json
+gramclaw analyze status --json
+gramclaw ask "wooden kitchens I saved last year" --json
+```
+
+On macOS, the local engine uses Apple Vision for OCR and image classification.
+Every platform indexes imported captions and alt text, palettes, style features,
+local embeddings, and duplicate fingerprints without uploading the archive.
+Failed work stays in a persistent retry queue.
+
+Optional cloud vision is explicit per run:
+
+```bash
+export OPENAI_API_KEY="..."
+gramclaw analyze run --provider cloud --force --json
+```
+
+Only media selected for that cloud run is sent. The default model can be
+overridden with `GRAMCLAW_OPENAI_VISION_MODEL`.
+
+## Smart Saved and boards
+
+```bash
+gramclaw library organize --json
+gramclaw library create "Kitchen references" --post <post-id>
+gramclaw library tag "warm wood" <post-id-1> <post-id-2>
+
+gramclaw boards create "Issue 09" --post <post-id-1> <post-id-2>
+gramclaw boards list --json
+```
+
+The local web workspace adds bulk selection, custom tags and collections,
+automatic clusters, duplicate review, a freeform board editor, and image/PDF
+exports.
 
 ## Git-friendly backup
 

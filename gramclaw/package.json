@@ -1,7 +1,7 @@
 {
   "name": "gramclaw",
-  "version": "1.0.0",
-  "description": "Local-first Instagram memory: archives, posts, stories, DMs, saves, likes, search, and agent-ready JSON.",
+  "version": "1.1.0",
+  "description": "Local-first Instagram visual memory: archives, private media analysis, Ask search, smart Saved collections, boards, and agent-ready JSON.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -9,6 +9,7 @@
   },
   "files": [
     "bin/",
+    "native/",
     "src/",
     "web/",
     "README.md",
