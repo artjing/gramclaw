@@ -6,6 +6,17 @@ import test from "node:test";
 import { importArchive } from "../src/archive.js";
 import { setHomeOverride } from "../src/config.js";
 import { closeDb, getDb, seedDemoData } from "../src/db.js";
+import { getAnalysisStatus, runAnalysis } from "../src/analysis.js";
+import {
+  addBoardItems,
+  createBoard,
+  createLibraryCollection,
+  getBoard,
+  getLibraryOverview,
+  organizeLibrary,
+  updateBoardItem,
+  visualSearch,
+} from "../src/library.js";
 import { getStatus, graphQuery, listPosts, searchDms } from "../src/queries.js";
 import { serve } from "../src/server.js";
 
@@ -134,6 +145,74 @@ test("local web server exposes the seeded workspace", async () => {
     assert.equal(payload.counts.posts, 8);
     const html = await (await fetch(running.url)).text();
     assert.match(html, /gramclaw/);
+  } finally {
+    if (server) await new Promise((resolve) => server.close(resolve));
+    scope.cleanup();
+  }
+});
+
+test("visual search, smart Saved collections, and boards work end to end", async () => {
+  const scope = workspace();
+  try {
+    const db = getDb();
+    seedDemoData(db);
+
+    const search = visualSearch(db, "wooden interiors I saved");
+    assert.equal(search.interpretedAs.saved, true);
+    assert.equal(search.items[0].id, "post_demo_05");
+    assert.ok(search.items[0].why.length >= 1);
+
+    const organized = organizeLibrary(db);
+    assert.equal(organized.ok, true);
+    const overview = getLibraryOverview(db);
+    assert.equal(overview.savedCount, 2);
+    assert.ok(overview.collections.some((item) => item.slug === "interiors" && item.count >= 1));
+
+    const collection = createLibraryCollection(db, {
+      name: "Kitchen references",
+      postIds: ["post_demo_05"],
+    });
+    assert.equal(collection.kind, "custom");
+
+    const board = createBoard(db, {
+      name: "Warm materials",
+      postIds: ["post_demo_05"],
+    });
+    addBoardItems(db, board.id, ["post_demo_02"]);
+    const loaded = getBoard(db, board.id);
+    assert.equal(loaded.items.length, 2);
+    const updated = updateBoardItem(db, board.id, loaded.items[0].id, {
+      x: 188,
+      y: 94,
+      note: "Use the warm wood and compact scale.",
+    });
+    assert.equal(updated.x, 188);
+    assert.match(updated.note, /warm wood/);
+
+    await runAnalysis({ db, provider: "local", force: true, limit: 2 });
+    const analysis = getAnalysisStatus(db);
+    assert.equal(analysis.counts.failed, 0);
+    assert.ok(analysis.counts.completed >= 8);
+  } finally {
+    scope.cleanup();
+  }
+});
+
+test("local web API exposes visual search, analysis progress, library, and boards", async () => {
+  const scope = workspace();
+  let server;
+  try {
+    seedDemoData(getDb());
+    const running = await serve({ port: 0, host: "127.0.0.1" });
+    server = running.server;
+    const visual = await (await fetch(`${running.url}/api/visual-search?q=red%20poster%20saved`)).json();
+    assert.equal(visual.items[0].id, "post_demo_02");
+    const analysis = await (await fetch(`${running.url}/api/analysis/status`)).json();
+    assert.equal(analysis.counts.completed, 8);
+    const library = await (await fetch(`${running.url}/api/library`)).json();
+    assert.equal(library.savedCount, 2);
+    const board = await (await fetch(`${running.url}/api/boards/board_demo_01`)).json();
+    assert.equal(board.items.length, 3);
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     scope.cleanup();
