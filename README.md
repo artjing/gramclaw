@@ -5,10 +5,6 @@ memory workspace inspired by Birdclaw. It turns an Instagram data export into a
 private, searchable library with media analysis, natural-language visual
 search, Smart Saved organization, and exportable moodboards.
 
-[Try the public demo](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/#demo) ·
-[Visit the product site](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/) ·
-[Download v1.1](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/downloads/gramclaw-1.1.0.tgz)
-
 The public demo uses fictional sample content and requires no Instagram login.
 Your real archive stays on your own computer when you install Gramclaw.
 
@@ -22,7 +18,7 @@ or sync from their own signed-in browser.
 
 ## See it in action
 
-[![Gramclaw hybrid visual search showing why each result matched](./public/demo-search.jpg)](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/#demo)
+![Gramclaw hybrid visual search showing why each result matched](./public/demo-search.jpg)
 
 Ask for a visual memory in ordinary language, combine semantic image, caption,
 OCR, date, creator, color, media-type, Saved, and Liked filters, then see why
@@ -48,28 +44,25 @@ notes, and export the board as an image or PDF.
 
 Node.js 22.13 or newer is required.
 
-### 1. Download and install
+### 1. Install from this repository
 
-macOS or Linux:
+Clone the repository, then install its bundled release:
 
 ```bash
-curl -fL \
-  "https://gramclaw-instagram-memory.jingjing768.chatgpt.site/downloads/gramclaw-1.1.0.tgz?v=1.1.0-privacy-install" \
-  -o gramclaw-1.1.0.tgz
-npm install -g ./gramclaw-1.1.0.tgz
+git clone --depth 1 https://github.com/artjing/gramclaw.git
+cd gramclaw
+npm install -g ./public/downloads/gramclaw-1.1.0.tgz
 ```
 
-Windows PowerShell:
+You can also choose **Code → Download ZIP** on GitHub, extract the ZIP, open a
+terminal in the extracted folder, and run:
 
-```powershell
-Invoke-WebRequest `
-  "https://gramclaw-instagram-memory.jingjing768.chatgpt.site/downloads/gramclaw-1.1.0.tgz?v=1.1.0-privacy-install" `
-  -OutFile gramclaw-1.1.0.tgz
-npm install -g .\gramclaw-1.1.0.tgz
+```bash
+npm install -g ./public/downloads/gramclaw-1.1.0.tgz
 ```
 
-The download command only saves the public Gramclaw package. It does not sign
-in to Instagram or send account information anywhere.
+Installing Gramclaw does not sign in to Instagram or include another person's
+account data.
 
 ### 2. Choose your setup
 
@@ -80,7 +73,9 @@ gramclaw init --demo
 gramclaw serve --open
 ```
 
-To use your own Instagram export:
+To use your own Instagram export, first request your personal archive from
+Instagram Accounts Center and choose JSON. Keep that ZIP private and do not add
+it to this repository. Then run:
 
 ```bash
 gramclaw init
@@ -89,9 +84,8 @@ gramclaw analyze run --provider local --json
 gramclaw serve --open
 ```
 
-Request the export from Instagram Accounts Center, choose JSON, then replace
-the example ZIP path with the file you downloaded. Each person imports their
-own export; no shared Gramclaw or maintainer login is involved.
+Replace the example ZIP path with the archive you downloaded. Each person
+imports their own export; no shared Gramclaw or maintainer login is involved.
 
 ### 3. Optional live sync
 
