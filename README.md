@@ -64,7 +64,7 @@ npm install -g ./public/downloads/gramclaw-1.1.0.tgz
 Installing Gramclaw does not sign in to Instagram or include another person's
 account data.
 
-### 2. Choose your setup
+### 2. Import your own Instagram export (recommended)
 
 To explore safely with fictional sample data:
 
@@ -73,9 +73,19 @@ gramclaw init --demo
 gramclaw serve --open
 ```
 
-To use your own Instagram export, first request your personal archive from
-Instagram Accounts Center and choose JSON. Keep that ZIP private and do not add
-it to this repository. Then run:
+For your real account, [request an export from Instagram](https://www.facebook.com/help/181231772500920):
+
+1. In Instagram, open **Settings → Accounts Center**.
+2. Open **Your information and permissions → Export your information**.
+3. Choose **Create export**, select your Instagram profile, then choose
+   **Export to device**.
+4. Choose the information you want Gramclaw to index, select **All time**, and
+   choose **JSON** as the format. Include media if you want local visual
+   analysis.
+5. Start the export. Instagram will notify you when it is ready; download the
+   ZIP from **Available downloads**.
+
+Keep the ZIP private and do not add it to this repository. Import it with:
 
 ```bash
 gramclaw init
@@ -87,7 +97,14 @@ gramclaw serve --open
 Replace the example ZIP path with the archive you downloaded. Each person
 imports their own export; no shared Gramclaw or maintainer login is involved.
 
-### 3. Optional live sync
+### 3. Optional: refresh newer activity from your browser
+
+**You do not need this step if the archive imported in Step 2 contains
+everything you need.**
+
+The Instagram export is a durable snapshot from the time it was created. Use
+live sync only when you want to refresh newer posts, Saved items, or Liked items
+without requesting another export.
 
 After signing in to **your own Instagram account** in a supported browser on
 the same computer:
@@ -101,8 +118,9 @@ gramclaw serve --open
 ```
 
 Gramclaw reads that local browser session on demand and does not put raw cookie
-values in its database, JSON output, or backups. Archive-only mode works without
-this optional step.
+values in its database, JSON output, or backups. This optional transport uses
+Instagram web endpoints that can change or be rate-limited; archive-only mode
+remains the recommended, durable path.
 
 See `gramclaw/README.md` for archive import, live adapters, guarded publishing,
 private media analysis, visual search, smart Saved collections, boards, media
