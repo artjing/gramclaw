@@ -12,6 +12,14 @@ search, Smart Saved organization, and exportable moodboards.
 The public demo uses fictional sample content and requires no Instagram login.
 Your real archive stays on your own computer when you install Gramclaw.
 
+## Privacy
+
+This repository, the public demo, and the downloadable release do **not**
+contain the maintainer's Instagram username, profile, cookies, messages, Saved
+items, Liked items, or archive. Every installation creates a separate local
+workspace for that user, and it reads only the data that user chooses to import
+or sync from their own signed-in browser.
+
 ## See it in action
 
 [![Gramclaw hybrid visual search showing why each result matched](./public/demo-search.jpg)](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/#demo)
@@ -36,23 +44,71 @@ notes, and export the board as an image or PDF.
 | Complete archive memory | Posts, comments, DMs, relationships, and media normalized into SQLite and searchable with FTS5 |
 | Automation-ready CLI | The same local memory exposed through a JSON-first CLI, backups, caching, and guarded publishing |
 
-## Install
+## Install for yourself
 
 Node.js 22.13 or newer is required.
 
+### 1. Download and install
+
+macOS or Linux:
+
 ```bash
-curl -LO https://gramclaw-instagram-memory.jingjing768.chatgpt.site/downloads/gramclaw-1.1.0.tgz
+curl -fL \
+  "https://gramclaw-instagram-memory.jingjing768.chatgpt.site/downloads/gramclaw-1.1.0.tgz?v=1.1.0-privacy-install" \
+  -o gramclaw-1.1.0.tgz
 npm install -g ./gramclaw-1.1.0.tgz
+```
+
+Windows PowerShell:
+
+```powershell
+Invoke-WebRequest `
+  "https://gramclaw-instagram-memory.jingjing768.chatgpt.site/downloads/gramclaw-1.1.0.tgz?v=1.1.0-privacy-install" `
+  -OutFile gramclaw-1.1.0.tgz
+npm install -g .\gramclaw-1.1.0.tgz
+```
+
+The download command only saves the public Gramclaw package. It does not sign
+in to Instagram or send account information anywhere.
+
+### 2. Choose your setup
+
+To explore safely with fictional sample data:
+
+```bash
 gramclaw init --demo
 gramclaw serve --open
 ```
 
-For a real archive:
+To use your own Instagram export:
 
 ```bash
+gramclaw init
 gramclaw import archive ~/Downloads/instagram-export.zip --json
+gramclaw analyze run --provider local --json
 gramclaw serve --open
 ```
+
+Request the export from Instagram Accounts Center, choose JSON, then replace
+the example ZIP path with the file you downloaded. Each person imports their
+own export; no shared Gramclaw or maintainer login is involved.
+
+### 3. Optional live sync
+
+After signing in to **your own Instagram account** in a supported browser on
+the same computer:
+
+```bash
+gramclaw auth status --json
+gramclaw sync posts --mode cookie --limit 100 --json
+gramclaw sync saved --mode cookie --limit 250 --json
+gramclaw sync liked --mode cookie --limit 100 --json
+gramclaw serve --open
+```
+
+Gramclaw reads that local browser session on demand and does not put raw cookie
+values in its database, JSON output, or backups. Archive-only mode works without
+this optional step.
 
 See `gramclaw/README.md` for archive import, live adapters, guarded publishing,
 private media analysis, visual search, smart Saved collections, boards, media
