@@ -66,13 +66,6 @@ account data.
 
 ### 2. Import your own Instagram export (recommended)
 
-To explore safely with fictional sample data:
-
-```bash
-gramclaw init --demo
-gramclaw serve --open
-```
-
 For your real account, [request an export from Instagram](https://www.facebook.com/help/181231772500920):
 
 1. In Instagram, open **Settings → Accounts Center**.
