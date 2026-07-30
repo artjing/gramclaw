@@ -53,7 +53,7 @@ if operation == "doctor":
             "ok": True,
             "runtime": {
                 "python": ".".join(str(item) for item in sys.version_info[:3]),
-                "packages": {"instagrapi": "2.16.25", "keyring": "25.7.0"},
+                "packages": {"instagrapi": "2.18.12", "keyring": "25.7.0"},
             },
             "keyring": {"available": True, "backend": "FakeSecureKeyring"},
         }

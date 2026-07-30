@@ -53,9 +53,9 @@ gramclaw logout
 
 > Direct sign-in uses Instagram's unofficial private API. Instagram may challenge, restrict, or ban accounts that use it; continue only with an account you control.
 
-Gramclaw uses a short-lived Python sidecar pinned to `instagrapi==2.16.25`.
+Gramclaw uses a short-lived Python sidecar pinned to `instagrapi==2.18.12`.
 The first direct-auth operation creates a hash-locked runtime under
-`~/.gramclaw/runtime/instagram-auth/2.16.25/`. The username, password, 2FA
+`~/.gramclaw/runtime/instagram-auth/2.18.12/`. The username, password, 2FA
 code, and challenge answers travel only through inherited process pipes. The
 password is discarded after sign-in and is never accepted through an argument
 or environment variable.
@@ -273,7 +273,7 @@ gramclaw backup sync \
   gramclaw.sqlite
   config.json
   runtime/
-    instagram-auth/2.16.25/  # pinned packages only; no account secret
+    instagram-auth/2.18.12/  # pinned packages only; no account secret
   media/
     originals/archive/
     originals/live/

@@ -75,6 +75,7 @@ class FakeClient:
 
     def __init__(self):
         self.user_id = "123"
+        self.username = "example"
         self.login_calls = 0
         self.challenge_code_handler = None
         self.private = type(
@@ -126,6 +127,8 @@ class FakeClient:
 
     def account_info(self):
         print(f"dependency-account-output:{SESSION}")
+        if self.mode == "profile_lookup_failure":
+            raise named_error("ClientGraphqlError")()
         return {
             "pk": 123,
             "username": "example",
@@ -189,6 +192,15 @@ class SidecarTests(unittest.TestCase):
         self.assertNotIn(PASSWORD, stored)
         self.assertNotIn('"password"', stored)
 
+    def test_success_survives_optional_profile_lookup_failure(self):
+        messages, stdout, stderr, keyring = self.run_login("profile_lookup_failure")
+        self.assertEqual(messages[-1]["type"], "result")
+        self.assertTrue(messages[-1]["ok"])
+        self.assertEqual(messages[-1]["identity"]["username"], "example")
+        self.assertEqual(messages[-1]["identity"]["userId"], "123")
+        self.assertTrue(keyring.values)
+        self.assert_no_transcript_secrets(stdout, stderr)
+
     def test_two_factor_prompt_resumes_in_same_process_without_leaking_code(self):
         response = json.dumps(
             {
@@ -242,6 +254,12 @@ class SidecarTests(unittest.TestCase):
                 messages, stdout, stderr, _keyring = self.run_login(mode)
                 self.assertEqual(messages[-1]["code"], expected)
                 self.assert_no_transcript_secrets(stdout, stderr)
+
+    def test_unknown_private_response_is_actionable(self):
+        error = named_error("UnknownError")()
+        code, message = MODULE.classify_exception(error)
+        self.assertEqual(code, "unsupported_login_response")
+        self.assertIn("cannot complete", message)
 
     def test_cancel_and_mismatched_prompt_are_protocol_safe(self):
         for response, expected in (

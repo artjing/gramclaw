@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPaths } from "./config.js";
 
-export const INSTAGRAPI_VERSION = "2.16.25";
+export const INSTAGRAPI_VERSION = "2.18.12";
 const RUNTIME_SCHEMA = 1;
 const PYTHON_ROOT = fileURLToPath(new URL("../python", import.meta.url));
 const SIDECAR_PATH = join(PYTHON_ROOT, "gramclaw_instagram.py");

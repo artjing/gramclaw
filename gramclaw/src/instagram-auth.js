@@ -34,6 +34,7 @@ const SAFE_ERRORS = {
   runtime_unavailable: "Python 3.10+ and the secure sign-in runtime are required.",
   keyring_unavailable: "A secure system credential store is unavailable.",
   web_cookie_bridge_unavailable: "The saved session could not be verified with Gramclaw's existing web transport.",
+  unsupported_login_response: "Instagram returned a private sign-in response that this Gramclaw build cannot complete.",
   protocol_error: "The secure sign-in protocol failed.",
   cancelled: "Sign-in was cancelled.",
 };

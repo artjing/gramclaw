@@ -29,7 +29,7 @@ COOKIE_ALLOWLIST = (
     "dpr",
 )
 EXPECTED_VERSIONS = {
-    "instagrapi": "2.16.25",
+    "instagrapi": "2.18.12",
     "keyring": "25.7.0",
 }
 PROTOCOL_STDOUT = sys.stdout
@@ -99,6 +99,18 @@ def classify_exception(error: BaseException) -> tuple[str, str]:
         return (
             "manual_verification_required",
             "Finish the Instagram checkpoint in the official app or website, then reconnect.",
+        )
+    if name in {
+        "UnknownError",
+        "ClientUnknownError",
+        "ClientBadRequestError",
+        "ClientForbiddenError",
+        "ClientUnauthorizedError",
+        "GenericRequestError",
+    }:
+        return (
+            "unsupported_login_response",
+            "Instagram returned a private sign-in response that this Gramclaw build cannot complete.",
         )
     if name in {
         "ChallengeUnknownStep",
@@ -292,9 +304,27 @@ class InstagramSidecar:
         return client, stored
 
     def _identity(self, client: Any) -> dict[str, Any]:
-        with isolate_dependency_output():
-            account = client.account_info()
-        return safe_identity(account, str(getattr(client, "user_id", "") or ""))
+        user_id = str(getattr(client, "user_id", "") or "")
+        username = str(getattr(client, "username", "") or "").lstrip("@")
+        try:
+            with isolate_dependency_output():
+                account = client.account_info()
+            identity = safe_identity(account, user_id)
+            if identity["userId"] and identity["username"]:
+                return identity
+        except Exception:
+            # A private login can succeed even when the optional follow-up profile
+            # request is throttled or its response shape has changed. Preserve the
+            # authenticated session using the identity established by login.
+            pass
+        if not user_id or not username:
+            raise ProtocolFailure("Instagram identity was missing after sign-in.")
+        return {
+            "username": username,
+            "userId": user_id,
+            "displayName": username,
+            "avatarUrl": None,
+        }
 
     def _cookie_map(self, client: Any) -> dict[str, str]:
         with isolate_dependency_output():
