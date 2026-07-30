@@ -66,6 +66,11 @@ class FakePublic:
         return type("Response", (), {"cookies": self.cookies})()
 
 
+class UrlLike:
+    def __str__(self):
+        return "https://example.invalid/avatar-object.jpg"
+
+
 def named_error(name):
     return type(name, (Exception,), {})
 
@@ -75,6 +80,7 @@ class FakeClient:
 
     def __init__(self):
         self.user_id = "123"
+        self.username = "example"
         self.login_calls = 0
         self.challenge_code_handler = None
         self.private = type(
@@ -90,7 +96,7 @@ class FakeClient:
 
     def set_settings(self, settings):
         self.private.cookies = CookieJar(settings.get("cookies", {}))
-        self.user_id = settings.get("user_id", "123")
+        self.user_id = settings.get("user_id")
 
     def get_settings(self):
         return {
@@ -126,11 +132,17 @@ class FakeClient:
 
     def account_info(self):
         print(f"dependency-account-output:{SESSION}")
+        if self.mode == "profile_lookup_failure":
+            raise named_error("ClientGraphqlError")()
         return {
             "pk": 123,
             "username": "example",
             "full_name": "Example User",
-            "profile_pic_url": "https://example.invalid/avatar.jpg",
+            "profile_pic_url": (
+                UrlLike()
+                if self.mode == "url_object"
+                else "https://example.invalid/avatar.jpg"
+            ),
         }
 
 
@@ -189,6 +201,48 @@ class SidecarTests(unittest.TestCase):
         self.assertNotIn(PASSWORD, stored)
         self.assertNotIn('"password"', stored)
 
+    def test_success_survives_optional_profile_lookup_failure(self):
+        messages, stdout, stderr, keyring = self.run_login("profile_lookup_failure")
+        self.assertEqual(messages[-1]["type"], "result")
+        self.assertTrue(messages[-1]["ok"])
+        self.assertEqual(messages[-1]["identity"]["username"], "example")
+        self.assertEqual(messages[-1]["identity"]["userId"], "123")
+        self.assertTrue(keyring.values)
+        self.assert_no_transcript_secrets(stdout, stderr)
+
+    def test_identity_converts_url_objects_before_protocol_serialization(self):
+        messages, stdout, stderr, _keyring = self.run_login("url_object")
+        self.assertEqual(messages[-1]["type"], "result")
+        self.assertTrue(messages[-1]["ok"])
+        self.assertEqual(
+            messages[-1]["identity"]["avatarUrl"],
+            "https://example.invalid/avatar-object.jpg",
+        )
+        self.assert_no_transcript_secrets(stdout, stderr)
+
+    def test_stored_identity_rehydrates_client_fields_missing_from_settings(self):
+        keyring = MemoryKeyring()
+        store = MODULE.CredentialStore(keyring)
+        store.set(
+            "ig:123",
+            {
+                "schema": 1,
+                "username": "example",
+                "userId": "123",
+                "settings": {"cookies": {"sessionid": SESSION, "csrftoken": CSRF}},
+            },
+        )
+        client = FakeClient()
+        client.user_id = None
+        client.username = None
+        sidecar = MODULE.InstagramSidecar(
+            MODULE.Dependencies(client_factory=lambda: client, keyring=keyring)
+        )
+        hydrated, stored = sidecar._new_client("ig:123")
+        self.assertIsNotNone(stored)
+        self.assertEqual(hydrated.user_id, "123")
+        self.assertEqual(hydrated.username, "example")
+
     def test_two_factor_prompt_resumes_in_same_process_without_leaking_code(self):
         response = json.dumps(
             {
@@ -242,6 +296,12 @@ class SidecarTests(unittest.TestCase):
                 messages, stdout, stderr, _keyring = self.run_login(mode)
                 self.assertEqual(messages[-1]["code"], expected)
                 self.assert_no_transcript_secrets(stdout, stderr)
+
+    def test_unknown_private_response_is_actionable(self):
+        error = named_error("UnknownError")()
+        code, message = MODULE.classify_exception(error)
+        self.assertEqual(code, "unsupported_login_response")
+        self.assertIn("cannot complete", message)
 
     def test_cancel_and_mismatched_prompt_are_protocol_safe(self):
         for response, expected in (

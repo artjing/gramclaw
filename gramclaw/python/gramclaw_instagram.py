@@ -29,7 +29,7 @@ COOKIE_ALLOWLIST = (
     "dpr",
 )
 EXPECTED_VERSIONS = {
-    "instagrapi": "2.16.25",
+    "instagrapi": "2.18.12",
     "keyring": "25.7.0",
 }
 PROTOCOL_STDOUT = sys.stdout
@@ -101,6 +101,18 @@ def classify_exception(error: BaseException) -> tuple[str, str]:
             "Finish the Instagram checkpoint in the official app or website, then reconnect.",
         )
     if name in {
+        "UnknownError",
+        "ClientUnknownError",
+        "ClientBadRequestError",
+        "ClientForbiddenError",
+        "ClientUnauthorizedError",
+        "GenericRequestError",
+    }:
+        return (
+            "unsupported_login_response",
+            "Instagram returned a private sign-in response that this Gramclaw build cannot complete.",
+        )
+    if name in {
         "ChallengeUnknownStep",
         "ChallengeSelfieCaptcha",
         "ChallengeUnknownStep",
@@ -133,11 +145,12 @@ def safe_identity(value: Any, fallback_user_id: str = "") -> dict[str, Any]:
     if not isinstance(value, dict):
         value = {}
     username = str(value.get("username") or "").lstrip("@")
+    avatar_url = value.get("profile_pic_url_hd") or value.get("profile_pic_url")
     return {
         "username": username,
         "userId": str(value.get("pk") or value.get("id") or fallback_user_id or ""),
         "displayName": str(value.get("full_name") or value.get("name") or username),
-        "avatarUrl": value.get("profile_pic_url_hd") or value.get("profile_pic_url"),
+        "avatarUrl": str(avatar_url) if avatar_url else None,
     }
 
 
@@ -289,12 +302,34 @@ class InstagramSidecar:
         if stored:
             with isolate_dependency_output():
                 client.set_settings(stored["settings"])
+            if not getattr(client, "user_id", None) and stored.get("userId"):
+                client.user_id = stored["userId"]
+            if not getattr(client, "username", None) and stored.get("username"):
+                client.username = stored["username"]
         return client, stored
 
     def _identity(self, client: Any) -> dict[str, Any]:
-        with isolate_dependency_output():
-            account = client.account_info()
-        return safe_identity(account, str(getattr(client, "user_id", "") or ""))
+        user_id = str(getattr(client, "user_id", "") or "")
+        username = str(getattr(client, "username", "") or "").lstrip("@")
+        try:
+            with isolate_dependency_output():
+                account = client.account_info()
+            identity = safe_identity(account, user_id)
+            if identity["userId"] and identity["username"]:
+                return identity
+        except Exception:
+            # A private login can succeed even when the optional follow-up profile
+            # request is throttled or its response shape has changed. Preserve the
+            # authenticated session using the identity established by login.
+            pass
+        if not user_id or not username:
+            raise ProtocolFailure("Instagram identity was missing after sign-in.")
+        return {
+            "username": username,
+            "userId": user_id,
+            "displayName": username,
+            "avatarUrl": None,
+        }
 
     def _cookie_map(self, client: Any) -> dict[str, str]:
         with isolate_dependency_output():

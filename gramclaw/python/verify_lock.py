@@ -11,7 +11,7 @@ LOCK_PATH = pathlib.Path(__file__).with_name("requirements.lock")
 PIN = re.compile(r"^[A-Za-z0-9_.-]+==[A-Za-z0-9_.+!-]+(?:\s+\\)?$")
 HASH = re.compile(r"^\s+--hash=sha256:[a-f0-9]{64}(?:\s+\\)?$")
 REQUIRED = {
-    "instagrapi": "2.16.25",
+    "instagrapi": "2.18.12",
     "keyring": "25.7.0",
     "pillow": "12.2.0",
 }
