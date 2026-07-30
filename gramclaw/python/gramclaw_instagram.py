@@ -145,11 +145,12 @@ def safe_identity(value: Any, fallback_user_id: str = "") -> dict[str, Any]:
     if not isinstance(value, dict):
         value = {}
     username = str(value.get("username") or "").lstrip("@")
+    avatar_url = value.get("profile_pic_url_hd") or value.get("profile_pic_url")
     return {
         "username": username,
         "userId": str(value.get("pk") or value.get("id") or fallback_user_id or ""),
         "displayName": str(value.get("full_name") or value.get("name") or username),
-        "avatarUrl": value.get("profile_pic_url_hd") or value.get("profile_pic_url"),
+        "avatarUrl": str(avatar_url) if avatar_url else None,
     }
 
 
@@ -301,6 +302,10 @@ class InstagramSidecar:
         if stored:
             with isolate_dependency_output():
                 client.set_settings(stored["settings"])
+            if not getattr(client, "user_id", None) and stored.get("userId"):
+                client.user_id = stored["userId"]
+            if not getattr(client, "username", None) and stored.get("username"):
+                client.username = stored["username"]
         return client, stored
 
     def _identity(self, client: Any) -> dict[str, Any]:
