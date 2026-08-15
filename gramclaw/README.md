@@ -4,28 +4,28 @@ Gramclaw is a local-first Instagram workspace: data-export import, cached live r
 
 It is inspired by the local-first architecture of Birdclaw, translated to Instagram’s native objects: posts, carousels, reels, stories, comments, saves, likes, followers/following, and direct messages.
 
-## Install
+## How to use it
 
 Node.js 22.13 or newer is required.
-Direct Instagram sign-in also requires Python 3.10 or newer.
 
 ```bash
-npm install -g ./gramclaw-1.1.0.tgz
-gramclaw init --demo
+git clone https://github.com/tmad4000/gramclaw.git
+cd gramclaw/gramclaw
+npm install
+npm link
+gramclaw init
 gramclaw serve --open
 ```
 
-From source:
+The app opens at [http://127.0.0.1:4667](http://127.0.0.1:4667).
 
-```bash
-npm install
-npm link
-gramclaw init --demo
-```
+1. In Instagram / Meta Accounts Center, download your information (JSON or HTML ZIP).
+2. In the app, tap **Import archive ZIP** and choose the file.
 
-## Bring your Instagram history
+To reopen later: `gramclaw serve --open`. Sample data without an export:
+`gramclaw init --demo`.
 
-**Start here.** Instagram lets you export selected information from Accounts Center. Choose JSON and include the categories you want Gramclaw to index. This is the recommended way to load your library — not live API download.
+CLI import:
 
 ```bash
 gramclaw archive find --json
@@ -34,9 +34,8 @@ gramclaw import archive ~/Downloads/instagram-export.zip \
   --select posts,stories,comments,saved,likes,directMessages,followers,following
 ```
 
-Imports are idempotent and merge-safe by default. Add `--restore` only when the selected archive slices should exactly replace prior archive rows.
-
-The local web onboarding leads with archive import: pick a detected ZIP from Downloads/Desktop, or paste a path.
+Imports are idempotent and merge-safe by default. Add `--restore` only when the
+selected archive slices should exactly replace prior archive rows.
 
 ## Optional update sync (direct sign-in)
 

@@ -37,39 +37,25 @@ notes, and export the board as an image or PDF.
 | Direct sign-in | Type a username and password locally; the password is discarded and the reusable session stays in the operating-system credential store |
 | Automation-ready CLI | The same local memory exposed through a JSON-first CLI, backups, caching, and guarded publishing |
 
-## Install
+## How to use it
 
-Node.js 22.13 or newer is required.
+Node.js 22.13 or newer is required. The installable app lives in `gramclaw/`.
 
 ```bash
-curl -LO https://gramclaw-instagram-memory.jingjing768.chatgpt.site/downloads/gramclaw-1.1.0.tgz
-npm install -g ./gramclaw-1.1.0.tgz
-gramclaw init --demo
+git clone https://github.com/tmad4000/gramclaw.git
+cd gramclaw/gramclaw
+npm install
+npm link
+gramclaw init
 gramclaw serve --open
 ```
 
-For a real archive:
+The app opens at [http://127.0.0.1:4667](http://127.0.0.1:4667).
 
-```bash
-gramclaw import archive ~/Downloads/instagram-export.zip --json
-gramclaw serve --open
-```
+1. In Instagram / Meta Accounts Center, download your information (JSON or HTML ZIP).
+2. In the app, tap **Import archive ZIP** and choose the file.
 
-Or connect bounded live sync directly:
-
-```bash
-gramclaw login
-gramclaw serve --open
-```
-
-Direct sign-in uses Instagram's unofficial private API and can trigger
-challenges, restrictions, or bans. It is optional; archive-only use remains
-fully available.
-
-See `gramclaw/README.md` for direct sign-in and its credential-store design,
-archive import, live adapters, guarded publishing,
-private media analysis, visual search, smart Saved collections, boards, media
-caching, backup, and complete CLI documentation.
+To reopen later: `gramclaw serve --open`. For CLI details, see [`gramclaw/README.md`](gramclaw/README.md).
 
 ## Develop the public site
 
