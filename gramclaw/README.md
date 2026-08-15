@@ -21,6 +21,7 @@ The app opens at [http://127.0.0.1:4667](http://127.0.0.1:4667).
 
 1. In Instagram / Meta Accounts Center, download your information (JSON or HTML ZIP).
 2. In the app, tap **Import archive ZIP** and choose the file.
+3. Optional: tap **Enable update sync** to sign in, then **Append 30 recent posts** when you want recent updates.
 
 To reopen later: `gramclaw serve --open`. Sample data without an export:
 `gramclaw init --demo`.
