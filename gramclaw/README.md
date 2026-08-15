@@ -25,7 +25,7 @@ gramclaw init --demo
 
 ## Bring your Instagram history
 
-Instagram lets you export selected information from Accounts Center. Choose JSON and include the categories you want Gramclaw to index.
+**Start here.** Instagram lets you export selected information from Accounts Center. Choose JSON and include the categories you want Gramclaw to index. This is the recommended way to load your library — not live API download.
 
 ```bash
 gramclaw archive find --json
@@ -36,10 +36,11 @@ gramclaw import archive ~/Downloads/instagram-export.zip \
 
 Imports are idempotent and merge-safe by default. Add `--restore` only when the selected archive slices should exactly replace prior archive rows.
 
-## Direct Instagram sign-in
+The local web onboarding leads with archive import: pick a detected ZIP from Downloads/Desktop, or paste a path.
 
-Connect live sync by typing the username and password for an account you
-control:
+## Optional update sync (direct sign-in)
+
+After your archive is imported, you may enable live sync to **append recent updates only** — not to download full history — by signing in with an account you control:
 
 ```bash
 gramclaw login
@@ -51,7 +52,7 @@ gramclaw auth verify
 gramclaw logout
 ```
 
-> Direct sign-in uses Instagram's unofficial private API. Instagram may challenge, restrict, or ban accounts that use it; continue only with an account you control.
+> Direct sign-in uses Instagram's unofficial private API. Instagram may challenge, restrict, or ban accounts that use it; continue only with an account you control. Prefer the official archive for history.
 
 Gramclaw uses a short-lived Python sidecar pinned to `instagrapi==2.18.12`.
 The first direct-auth operation creates a hash-locked runtime under
@@ -94,7 +95,8 @@ Instagram devices untouched.
 The local web app offers the same sign-in flow only on a loopback listener.
 Password login is disabled when remote web binding is enabled, even when
 `GRAMCLAW_WEB_TOKEN` is configured. A successful connection offers a bounded
-“Sync 30 recent posts” action, but never starts a hidden or large sync.
+“Append 30 recent posts” action for updates after archive import, but never
+starts a hidden or large history download.
 
 Archive import, signed-in browser cookies, and the official Graph transport
 remain independent alternatives. Local/archive features never require direct

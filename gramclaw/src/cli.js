@@ -716,7 +716,7 @@ async function handleInstagramLogin(username, options, command) {
 }
 
 function authProgress(state, username) {
-  if (state === "preparing_runtime") process.stderr.write("Preparing secure sign-in…\n");
+  if (state === "preparing_runtime") process.stderr.write("Connecting…\n");
   if (state === "signing_in") process.stderr.write(`Signing in as @${username ?? "account"}…\n`);
 }
 
@@ -727,11 +727,11 @@ function printAuthResult(command, result) {
   }
   if (result.connected) {
     process.stdout.write(`\nConnected as @${result.username}.\n`);
-    process.stdout.write("Session: system credential store\nPassword: not saved\n");
+    process.stdout.write("Session saved in system keychain · password not saved\n");
     if (!result.verified) {
-      process.stdout.write(`Verification: pending — ${result.message ?? "run `gramclaw auth verify`"}\n`);
+      process.stdout.write(`Live sync check pending — run: gramclaw auth verify\n`);
     }
-    process.stdout.write("\nNext: gramclaw sync posts --mode cookie --limit 30\n");
+    process.stdout.write("\nNext: gramclaw sync posts --limit 30\n");
     return;
   }
   output(command, result);

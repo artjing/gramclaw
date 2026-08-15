@@ -331,9 +331,40 @@ class InstagramSidecar:
             "avatarUrl": None,
         }
 
+    def _authorization_cookie_fallbacks(self, client: Any) -> dict[str, str]:
+        """instagrapi often keeps sessionid in authorization_data, not cookie_dict."""
+        with isolate_dependency_output():
+            settings = client.get_settings() if hasattr(client, "get_settings") else {}
+        if not isinstance(settings, dict):
+            return {}
+        auth = settings.get("authorization_data")
+        if not isinstance(auth, dict):
+            return {}
+        out: dict[str, str] = {}
+        for name in ("sessionid", "ds_user_id"):
+            value = auth.get(name)
+            if value is not None and str(value):
+                out[name] = str(value)
+        return out
+
+    def _promote_authorization_cookies(self, client: Any) -> None:
+        fallbacks = self._authorization_cookie_fallbacks(client)
+        if not fallbacks:
+            return
+        private_jar = getattr(getattr(client, "private", None), "cookies", None)
+        if private_jar is None:
+            return
+        current = private_jar.get_dict() if hasattr(private_jar, "get_dict") else {}
+        with isolate_dependency_output():
+            for name, value in fallbacks.items():
+                if not current.get(name):
+                    private_jar.set(name, value, domain=".instagram.com")
+
     def _cookie_map(self, client: Any) -> dict[str, str]:
         with isolate_dependency_output():
             raw = dict(getattr(client, "cookie_dict", {}) or {})
+        for name, value in self._authorization_cookie_fallbacks(client).items():
+            raw.setdefault(name, value)
         return {
             name: str(raw[name])
             for name in COOKIE_ALLOWLIST
@@ -341,8 +372,9 @@ class InstagramSidecar:
         }
 
     def _hydrate_web_cookies(self, client: Any) -> dict[str, str]:
+        self._promote_authorization_cookies(client)
         cookies = self._cookie_map(client)
-        if cookies.get("csrftoken"):
+        if cookies.get("csrftoken") and cookies.get("sessionid"):
             return cookies
         try:
             with isolate_dependency_output():
@@ -360,7 +392,7 @@ class InstagramSidecar:
                         if source_values.get(name) and private_jar is not None:
                             private_jar.set(name, source_values[name], domain=".instagram.com")
         except Exception:
-            return cookies
+            return self._cookie_map(client)
         return self._cookie_map(client)
 
     def _store_client(self, client: Any, identity: dict[str, Any]) -> tuple[str, dict[str, str]]:
@@ -471,7 +503,7 @@ class InstagramSidecar:
         client, stored = self._new_client(credential_id)
         if not stored:
             return error_envelope("session_expired", "The saved Instagram session is unavailable.")
-        cookies = self._cookie_map(client)
+        cookies = self._hydrate_web_cookies(client)
         if not cookies.get("sessionid") or not cookies.get("csrftoken"):
             return error_envelope(
                 "web_cookie_bridge_unavailable",

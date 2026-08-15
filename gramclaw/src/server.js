@@ -5,6 +5,7 @@ import { extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { ensureDirs } from "./config.js";
 import { getDb } from "./db.js";
+import { findArchives, importArchive } from "./archive.js";
 import {
   getAnalysisStatus,
   resumeAnalysis,
@@ -120,6 +121,24 @@ async function handleApi(request, response, url, context) {
   const segments = url.pathname.split("/").filter(Boolean).slice(1);
   if (segments[0] === "auth") {
     await handleAuthApi(request, response, method, segments.slice(1), context);
+    return;
+  }
+  if (method === "GET" && segments[0] === "archive" && segments[1] === "find") {
+    sendJson(response, 200, { items: findArchives() });
+    return;
+  }
+  if (method === "POST" && segments[0] === "archive" && segments[1] === "import") {
+    const body = await readBody(request);
+    const archivePath = String(body.path ?? "").trim();
+    if (!archivePath) {
+      sendJson(response, 400, { ok: false, error: "Archive path is required." });
+      return;
+    }
+    const result = await importArchive(archivePath, {
+      select: body.select,
+      restore: Boolean(body.restore),
+    });
+    sendJson(response, 200, result);
     return;
   }
   if (method === "GET" && segments[0] === "status") {
@@ -369,10 +388,12 @@ function serveStatic(response, pathname) {
   if (!path.startsWith(`${resolve(WEB_ROOT)}/`) || !existsSync(path) || statSync(path).isDirectory()) {
     path = join(WEB_ROOT, "index.html");
   }
+  const ext = extname(path).toLowerCase();
+  const noCache = [".html", ".js", ".css"].includes(ext);
   response.writeHead(200, {
     "content-type": mimeType(path),
     "content-length": statSync(path).size,
-    "cache-control": extname(path) === ".html" ? "no-cache" : "public, max-age=3600",
+    "cache-control": noCache ? "no-store" : "public, max-age=3600",
     "x-content-type-options": "nosniff",
     "referrer-policy": "same-origin",
   });

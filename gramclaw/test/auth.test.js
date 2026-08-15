@@ -903,20 +903,32 @@ test("onboarding markup implements the required accessible states and secret-cle
   assert.match(html, /id="account-pill"[^>]+aria-haspopup="dialog"/);
   for (const copy of [
     "Your Instagram,",
-    "Connect Instagram",
+    "Import your archive",
+    "Import archive ZIP",
+    "Enable update sync later (optional)",
+    "Skip for now",
+    "Enable update sync",
     "Import an archive instead",
     "Use a signed-in browser",
     "I've approved it — continue",
-    "Sync 30 recent posts",
+    "Append 30 recent posts",
     "Session saved securely · password not saved.",
     "Direct sign-in uses Instagram's unofficial private API.",
+    "Finishing connection…",
+    "Choose your ZIP",
   ]) {
     assert.match(app, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   for (const authState of [
     "idle",
+    "import",
+    "importing",
+    "import_done",
+    "import_error",
+    "login",
     "preparing_runtime",
     "signing_in",
+    "verifying",
     "needs_2fa",
     "needs_challenge_code",
     "needs_manual_approval",

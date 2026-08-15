@@ -8,6 +8,7 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import extract from "extract-zip";
@@ -58,15 +59,44 @@ export function findArchives() {
       const name = basename(path).toLowerCase();
       if (!name.includes("instagram") && !name.includes("meta") && !name.includes("information")) continue;
       const stat = statSync(path);
+      const format = probeArchiveFormat(path);
       candidates.push({
         path,
         name: basename(path),
         sizeBytes: stat.size,
         modifiedAt: stat.mtime.toISOString(),
+        format,
+        importable: format === "json" || format === "html",
       });
     }
   }
-  return candidates.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+  return candidates.sort((a, b) => {
+    if (a.importable !== b.importable) return a.importable ? -1 : 1;
+    return b.modifiedAt.localeCompare(a.modifiedAt);
+  });
+}
+
+function probeArchiveFormat(archivePath) {
+  try {
+    const listing = execFileSync("unzip", ["-Z1", archivePath], {
+      encoding: "utf8",
+      maxBuffer: 4_000_000,
+      timeout: 8_000,
+    });
+    const names = listing.split(/\r?\n/).filter(Boolean);
+    let jsonCount = 0;
+    let htmlCount = 0;
+    for (const name of names) {
+      if (/\.json$/i.test(name)) jsonCount += 1;
+      else if (/\.html$/i.test(name)) htmlCount += 1;
+      if (jsonCount > 0 && htmlCount > 0) break;
+    }
+    if (jsonCount > 0) return "json";
+    if (htmlCount > 0) return "html";
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 export async function importArchive(archivePath, options = {}) {
@@ -83,6 +113,7 @@ export async function importArchive(archivePath, options = {}) {
     const resolved = await resolveArchive(sourcePath);
     cleanup = resolved.cleanup;
     const analysis = analyzeArchive(resolved.rootDir, options);
+    assertImportableArchive(resolved.rootDir, analysis);
     const selected = normalizeSelected(options.select);
     const counts = applyArchive(db, analysis, {
       selected,
@@ -90,6 +121,12 @@ export async function importArchive(archivePath, options = {}) {
       rootDir: resolved.rootDir,
       sourcePath,
     });
+    const imported = Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0);
+    if (imported === 0) {
+      throw new Error(
+        "No Instagram posts, messages, or relationships were found in this archive. Request a new download from Accounts Center and choose JSON format.",
+      );
+    }
     db.prepare(`
       update import_runs set status='succeeded', counts_json=?, completed_at=? where id=?
     `).run(json(counts, {}), nowIso(), runId);
@@ -154,9 +191,16 @@ async function resolveArchive(path) {
 }
 
 function analyzeArchive(rootDir) {
+  const jsonAnalysis = analyzeJsonArchive(rootDir);
+  if (jsonAnalysis.filesScanned > 0) return jsonAnalysis;
+  return analyzeHtmlArchive(rootDir);
+}
+
+function analyzeJsonArchive(rootDir) {
   const jsonFiles = walk(rootDir, { filter: (name) => /\.json$/i.test(name) });
   const analysis = {
     filesScanned: jsonFiles.length,
+    format: "json",
     profile: null,
     posts: [],
     stories: [],
@@ -220,6 +264,339 @@ function analyzeArchive(rootDir) {
   analysis.followers = dedupeRelationship(analysis.followers);
   analysis.following = dedupeRelationship(analysis.following);
   return analysis;
+}
+
+function analyzeHtmlArchive(rootDir) {
+  const htmlFiles = walk(rootDir, { filter: (name) => /\.html$/i.test(name) });
+  const analysis = {
+    filesScanned: htmlFiles.length,
+    format: "html",
+    profile: null,
+    posts: [],
+    stories: [],
+    comments: [],
+    likes: [],
+    saved: [],
+    threads: [],
+    followers: [],
+    following: [],
+    warnings: [],
+  };
+  let ownerUsername = null;
+  for (const path of htmlFiles) {
+    const rel = relative(rootDir, path).split(sep).join("/").toLowerCase();
+    let html;
+    try {
+      html = readFileSync(path, "utf8");
+    } catch {
+      analysis.warnings.push(`Skipped unreadable HTML: ${relative(rootDir, path)}`);
+      continue;
+    }
+    ownerUsername ??= extractGeneratedUsername(html);
+    if (rel.includes("followers_and_following/followers") || /\/followers_\d+\.html$/.test(rel)) {
+      analysis.followers.push(...parseHtmlRelationships(html));
+      continue;
+    }
+    if (rel.includes("followers_and_following/following") || rel.endsWith("/following.html")) {
+      analysis.following.push(...parseHtmlRelationships(html));
+      continue;
+    }
+    if (rel.includes("/likes/liked_posts") || rel.endsWith("liked_posts.html")) {
+      analysis.likes.push(...parseHtmlCollectionItems(html, "liked"));
+      continue;
+    }
+    if (rel.includes("/saved/saved_posts") || rel.endsWith("saved_posts.html")) {
+      analysis.saved.push(...parseHtmlCollectionItems(html, "saved"));
+      continue;
+    }
+    if (rel.includes("/comments/post_comments") || rel.includes("/comments/")) {
+      analysis.comments.push(...parseHtmlComments(html));
+      continue;
+    }
+    if (rel.includes("/messages/inbox/") || rel.includes("/messages/message_requests/")) {
+      if (/message_\d+\.html$/.test(rel)) {
+        analysis.threads.push(parseHtmlThread(html, rel, ownerUsername));
+      }
+      continue;
+    }
+    if (rel.includes("/media/stories") || rel.endsWith("/stories.html")) {
+      analysis.stories.push(...parseHtmlPosts(html, "story", rel, ownerUsername));
+      continue;
+    }
+    if (rel.includes("/media/reels") || rel.endsWith("/reels.html")) {
+      analysis.posts.push(...parseHtmlPosts(html, "reel", rel, ownerUsername));
+      continue;
+    }
+    if (rel.includes("/media/posts") || /\/posts(?:_\d+)?\.html$/.test(rel)) {
+      analysis.posts.push(...parseHtmlPosts(html, "post", rel, ownerUsername));
+      continue;
+    }
+    if (rel.includes("personal_information") || rel.includes("instagram_profile_information")) {
+      analysis.profile = mergeProfile(analysis.profile, parseHtmlProfile(html, ownerUsername));
+    }
+  }
+  if (!analysis.profile && ownerUsername) {
+    analysis.profile = {
+      username: ownerUsername,
+      displayName: ownerUsername,
+      biography: "",
+      avatarUrl: null,
+      website: null,
+      externalUserId: null,
+      raw: { source: "html-generated-by" },
+    };
+  }
+  analysis.followers = dedupeRelationship(analysis.followers);
+  analysis.following = dedupeRelationship(analysis.following);
+  analysis.posts = dedupeBy(analysis.posts, (post) => post.id);
+  analysis.stories = dedupeBy(analysis.stories, (post) => post.id);
+  analysis.threads = analysis.threads.filter((thread) => thread.messages.length > 0);
+  return analysis;
+}
+
+function assertImportableArchive(_rootDir, analysis) {
+  const total =
+    analysis.posts.length
+    + analysis.stories.length
+    + analysis.comments.length
+    + analysis.likes.length
+    + analysis.saved.length
+    + analysis.threads.length
+    + analysis.followers.length
+    + analysis.following.length
+    + (analysis.profile?.username ? 1 : 0);
+  if (total > 0) return;
+  if (analysis.format === "html" && analysis.filesScanned > 0) {
+    throw new Error(
+      "This HTML Instagram export was readable, but no posts, messages, or relationships were recognized.",
+    );
+  }
+  throw new Error(
+    "No Instagram JSON or HTML export data was found in that archive.",
+  );
+}
+
+function extractGeneratedUsername(html) {
+  const match = String(html).match(/Generated by\s+([^<\s]+)/i);
+  return normalizeUsername(match?.[1] ?? "") || null;
+}
+
+function htmlContentBlocks(html) {
+  return [...String(html).matchAll(
+    /<div class="pam _3-95 _2ph- _a6-g uiBoxWhite noborder">([\s\S]*?)(?=<div class="pam _3-95 _2ph- _a6-g uiBoxWhite noborder">|<\/main>)/g,
+  )].map((match) => match[1]);
+}
+
+function stripHtml(value) {
+  return decodeInstagramText(decodeHtmlEntities(
+    String(value ?? "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  ));
+}
+
+function decodeHtmlEntities(value) {
+  return String(value ?? "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#0?39;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(Number(num)));
+}
+
+function parseHtmlDate(value) {
+  return timestampToIso(stripHtml(value));
+}
+
+function parseHtmlRelationships(html) {
+  const rows = [];
+  for (const block of htmlContentBlocks(html)) {
+    const link = block.match(/href="(https?:\/\/(?:www\.)?instagram\.com\/[^"]+)"/i);
+    const heading = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+    const username = normalizeUsername(
+      heading ? stripHtml(heading[1]) : inferUsernameFromUrl(link?.[1]) || stripHtml(link?.[1] ?? ""),
+    );
+    if (!username) continue;
+    const dateMatch = block.match(/<div>([A-Z][a-z]{2} \d{1,2}, \d{4}[^<]*)<\/div>/)
+      || block.match(/<div class="_3-94[^"]*">([^<]+)<\/div>/);
+    rows.push({
+      username,
+      displayName: username,
+      href: link?.[1] ?? null,
+      timestamp: parseHtmlDate(dateMatch?.[1]) ?? nowIso(),
+      raw: { source: "html", username },
+    });
+  }
+  return rows;
+}
+
+function parseHtmlPosts(html, kind, sourcePath, ownerUsername) {
+  const posts = [];
+  for (const block of htmlContentBlocks(html)) {
+    const captionMatch = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+    const caption = captionMatch ? stripHtml(captionMatch[1]) : "";
+    const mediaUris = [...new Set(
+      [...block.matchAll(/(?:src|href)="((?:media|files)\/[^"]+)"/gi)].map((match) => match[1]),
+    )].filter((uri) => !/instagram-logo/i.test(uri));
+    const dateMatch = block.match(/<div class="_3-94[^"]*">([^<]+)<\/div>/);
+    const createdAt = parseHtmlDate(dateMatch?.[1]);
+    if (!mediaUris.length && !caption) continue;
+    const media = mediaUris.map((uri) => ({
+      uri,
+      remoteUrl: null,
+      createdAt,
+      width: null,
+      height: null,
+      durationMs: null,
+      altText: "",
+      raw: { uri, source: "html" },
+    }));
+    posts.push({
+      id: stableId("post", kind, createdAt, caption, mediaUris[0], sourcePath),
+      shortcode: null,
+      kind,
+      caption,
+      createdAt,
+      permalink: null,
+      authorUsername: ownerUsername || "",
+      authorDisplayName: ownerUsername || "",
+      media,
+      raw: { source: "html", sourcePath, caption },
+    });
+  }
+  return posts;
+}
+
+function parseHtmlCollectionItems(html, kind) {
+  const items = [];
+  for (const block of htmlContentBlocks(html)) {
+    const link = block.match(/href="(https?:\/\/(?:www\.)?instagram\.com\/[^"]+)"/i);
+    const href = link?.[1] ?? null;
+    if (!href) continue;
+    const owner = block.match(/>Owner<\/h2>[\s\S]*?<a[^>]*href="[^"]*"[^>]*>([^<]+)</i)
+      || block.match(/Media Owner[\s\S]*?<div>([^<]+)<\/div>/i);
+    const dateMatch = block.match(/<div class="_3-94[^"]*">([^<]+)<\/div>/)
+      || block.match(/<td class="_2piu _a6_r">([^<]+)<\/td>/);
+    const username = normalizeUsername(owner?.[1] || inferUsernameFromUrl(href) || "unknown");
+    items.push({
+      kind,
+      href,
+      username,
+      timestamp: parseHtmlDate(dateMatch?.[1]),
+      raw: { source: "html", href, username },
+    });
+  }
+  return items;
+}
+
+function parseHtmlComments(html) {
+  const comments = [];
+  for (const block of htmlContentBlocks(html)) {
+    const textMatch = block.match(/>Comment<\/(?:td|h2)>[\s\S]*?<div>([^<]+)<\/div>/i)
+      || block.match(/<td[^>]*>Comment<\/td>[\s\S]*?<div>([^<]+)<\/div>/i);
+    const text = stripHtml(textMatch?.[1] ?? "");
+    if (!text) continue;
+    const ownerMatch = block.match(/Media Owner[\s\S]*?<div>([^<]+)<\/div>/i);
+    const timeMatch = block.match(/>Time<\/td>\s*<td[^>]*>([^<]+)<\/td>/i);
+    comments.push({
+      text,
+      createdAt: parseHtmlDate(timeMatch?.[1]),
+      authorUsername: "",
+      postId: null,
+      mediaOwner: stripHtml(ownerMatch?.[1] ?? "") || null,
+      raw: { source: "html", text },
+    });
+  }
+  return comments;
+}
+
+function parseHtmlThread(html, sourcePath, ownerUsername) {
+  const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const title = stripHtml(titleMatch?.[1] ?? basename(dirname(sourcePath))) || "Conversation";
+  const participants = new Map();
+  const messages = [];
+  for (const [index, block] of htmlContentBlocks(html).entries()) {
+    const senderMatch = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+    const senderName = stripHtml(senderMatch?.[1] ?? "") || "Unknown";
+    const bodyMatch = block.match(/<div class="_3-95 _a6-p">([\s\S]*?)<\/div>\s*<div class="_3-94/);
+    let text = "";
+    if (bodyMatch) {
+      const nested = [...bodyMatch[1].matchAll(/<div>([\s\S]*?)<\/div>/g)]
+        .map((match) => stripHtml(match[1]))
+        .filter(Boolean);
+      text = nested.join("\n");
+    }
+    const media = [...new Set(
+      [...block.matchAll(/(?:src|href)="((?:media|files|\.\.\/)[^"]+\.(?:jpg|jpeg|png|gif|mp4|webp))"/gi)]
+        .map((match) => match[1].replace(/^\.\.\//, "")),
+    )].map((uri) => ({
+      uri,
+      remoteUrl: null,
+      createdAt: null,
+      width: null,
+      height: null,
+      durationMs: null,
+      altText: "",
+      raw: { uri, source: "html-dm" },
+    }));
+    const dateMatch = block.match(/<div class="_3-94[^"]*">([^<]+)<\/div>/);
+    const createdAt = parseHtmlDate(dateMatch?.[1]);
+    if (!text && !media.length) continue;
+    participants.set(senderName, {
+      displayName: senderName,
+      username: normalizeUsername(senderName) || stableId("dm_user", senderName),
+    });
+    messages.push({
+      id: stableId("dm", sourcePath, createdAt, senderName, text, index),
+      externalMessageId: null,
+      senderName,
+      text,
+      createdAt,
+      media,
+      reactions: [],
+      share: {},
+      raw: { source: "html", senderName, text },
+    });
+  }
+  messages.sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
+  const last = messages.at(-1);
+  if (ownerUsername && !participants.has(ownerUsername)) {
+    participants.set(ownerUsername, {
+      displayName: ownerUsername,
+      username: ownerUsername,
+    });
+  }
+  return {
+    id: stableId("thread", sourcePath, title),
+    title,
+    threadPath: sourcePath,
+    participants: [...participants.values()],
+    messages,
+    lastMessageAt: last?.createdAt ?? null,
+    needsReply: Boolean(last && ownerUsername && !samePerson(last.senderName, ownerUsername)),
+    raw: { source: "html", sourcePath },
+  };
+}
+
+function parseHtmlProfile(html, ownerUsername) {
+  const username = extractGeneratedUsername(html) || ownerUsername || null;
+  const bioMatch = html.match(/>Biography<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/i)
+    || html.match(/>Bio<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/i);
+  const nameMatch = html.match(/>Name<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/i);
+  return {
+    username: normalizeUsername(username || stripHtml(nameMatch?.[1] ?? "")) || null,
+    displayName: stripHtml(nameMatch?.[1] ?? "") || username || null,
+    biography: stripHtml(bioMatch?.[1] ?? ""),
+    avatarUrl: null,
+    website: null,
+    externalUserId: null,
+    raw: { source: "html-profile" },
+  };
 }
 
 function applyArchive(db, analysis, context) {

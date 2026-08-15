@@ -20,6 +20,9 @@ const state = {
     result: null,
     errorCode: null,
     errorMessage: null,
+    archives: null,
+    archivePath: "",
+    importResult: null,
   },
   authController: null,
   onboardingDismissed: false,
@@ -154,31 +157,41 @@ function hasUsableLiveSession() {
 
 function isEmptyWorkspace() {
   const counts = state.status?.counts ?? {};
-  return Number(counts.profiles ?? 0) === 0
-    && Number(counts.posts ?? 0) === 0
+  // A default account/profile from `gramclaw init` should not hide onboarding.
+  return Number(counts.posts ?? 0) === 0
     && Number(counts.comments ?? 0) === 0
-    && Number(counts.dmMessages ?? 0) === 0;
+    && Number(counts.dmMessages ?? 0) === 0
+    && Number(counts.saved ?? 0) === 0
+    && Number(counts.liked ?? 0) === 0;
 }
 
 function shouldGateOnboarding() {
-  return !state.onboardingDismissed && isEmptyWorkspace() && !hasUsableLiveSession();
+  // Empty libraries always start with archive import, even if a browser
+  // Instagram session exists on this machine.
+  return !state.onboardingDismissed && isEmptyWorkspace();
 }
 
 function showOnboarding(options = {}) {
   if (options.reset !== false) {
     state.authUi = {
-      state: "idle",
+      state: options.mode === "login" ? "login" : options.mode === "import" ? "import" : "idle",
       attemptId: null,
       prompt: null,
       username: state.authStatus?.direct?.username ?? state.status?.account?.username ?? "",
       result: null,
       errorCode: null,
       errorMessage: null,
+      archives: null,
+      archivePath: "",
+      importResult: null,
     };
   }
   document.body.classList.add("onboarding-active");
   els.onboarding.hidden = false;
   renderAuthPanel();
+  if (state.authUi.state === "import") {
+    void loadArchiveCandidates();
+  }
 }
 
 async function dismissOnboarding() {
@@ -192,6 +205,7 @@ async function dismissOnboarding() {
 function renderAuthPanel() {
   const ui = state.authUi;
   const card = authStateCard(ui);
+  const busy = ["preparing_runtime", "signing_in", "verifying", "importing"].includes(ui.state);
   els.onboarding.innerHTML = `
     <div class="auth-atmosphere" aria-hidden="true"><i></i><i></i><i></i></div>
     <div class="auth-layout">
@@ -199,10 +213,10 @@ function renderAuthPanel() {
         <div class="auth-brand"><span class="brand-mark">g</span><strong>gramclaw</strong></div>
         <p class="eyebrow">Local Instagram memory</p>
         <h1 id="auth-title">Your Instagram,<br><em>on this machine.</em></h1>
-        <p>Sign in once to connect live sync. Your library stays in local SQLite, your session stays in your system credential store, and Gramclaw never saves your password.</p>
-        <div class="auth-local-note"><i></i><span><strong>Archive-only always works.</strong> Direct sign-in is optional, and opening your workspace never starts a network read.</span></div>
+        <p>Start with your official Meta export ZIP. Live sign-in is optional afterward — only for appending recent updates, not for downloading your history.</p>
+        <div class="auth-local-note"><i></i><span><strong>Archive first.</strong> Official export is the safe way to load your library. Sync updates stay small and explicit.</span></div>
       </section>
-      <section class="auth-card" aria-live="polite" aria-busy="${["preparing_runtime", "signing_in"].includes(ui.state)}">
+      <section class="auth-card" aria-live="polite" aria-busy="${busy}">
         ${card}
       </section>
     </div>`;
@@ -216,9 +230,106 @@ function authStateCard(ui) {
   if (ui.state === "idle") {
     return `
       <div class="auth-card-head">
-        <span class="auth-step">Secure sign-in</span>
-        <h2 tabindex="-1">Connect Instagram</h2>
-        <p>One account, one reusable session, no password file.</p>
+        <span class="auth-step">Recommended</span>
+        <h2 tabindex="-1">Import your archive</h2>
+        <p>Download your Instagram information from Meta Accounts Center, then import the ZIP here. JSON or HTML exports both work.</p>
+      </div>
+      <button type="button" class="auth-primary" data-auth-action="import-archive" data-auth-autofocus>Import archive ZIP <span>↗</span></button>
+      <ol class="auth-steps">
+        <li>Accounts Center → Your information → Download your information</li>
+        <li>Download the ZIP Meta sends you (JSON or HTML)</li>
+        <li>Import it into Gramclaw</li>
+      </ol>
+      <p class="auth-privacy">Imports merge into your local SQLite library. Your password is never required for archive import.</p>
+      <div class="auth-alternatives" aria-label="Optional next steps">
+        <button type="button" data-auth-action="show-login">Enable update sync later (optional)</button>
+        <button type="button" data-auth-action="open-workspace">Skip for now</button>
+      </div>`;
+  }
+  if (ui.state === "import") {
+    const items = ui.archives ?? [];
+    const list = items.length
+      ? `<ul class="auth-archive-list">${items.map((item) => {
+          const selected = ui.archivePath === item.path;
+          const format = item.format || "unknown";
+          const label = format === "json"
+            ? "JSON · ready"
+            : format === "html"
+              ? "HTML · ready"
+              : "Unknown format";
+          return `
+          <li>
+            <button type="button" class="${`${selected ? "selected" : ""} ${item.importable === false ? "incompatible" : ""}`.trim()}" data-auth-action="select-archive" data-path="${escapeAttr(item.path)}" data-importable="${item.importable ? "1" : "0"}" data-format="${escapeAttr(format)}">
+              <strong>${escapeHtml(item.name)}</strong>
+              <span>${escapeHtml(formatBytes(item.sizeBytes))} · ${escapeHtml(relativeTime(item.modifiedAt))} · ${escapeHtml(label)}</span>
+            </button>
+          </li>`;
+        }).join("")}</ul>`
+      : `<p class="auth-empty-archives">No Instagram/Meta ZIPs found in Downloads or Desktop yet. Paste a path below when your export is ready.</p>`;
+    return `
+      <div class="auth-card-head">
+        <span class="auth-step">Import archive</span>
+        <h2 tabindex="-1">Choose your ZIP</h2>
+        <p>Select your Instagram export ZIP (JSON or HTML). You can also paste a path to an extracted folder.</p>
+      </div>
+      ${list}
+      <form id="auth-import-form" class="auth-form compact">
+        <label>Archive path
+          <span class="auth-input"><input name="path" type="text" autocomplete="off" spellcheck="false" placeholder="/Users/you/Downloads/instagram-….zip" value="${escapeAttr(ui.archivePath)}" required data-auth-autofocus></span>
+        </label>
+        <button class="auth-primary" type="submit">Import archive <span>↗</span></button>
+      </form>
+      <div class="auth-inline-actions">
+        <button type="button" data-auth-action="refresh-archives">Refresh list</button>
+        <button type="button" data-auth-action="back-home">Back</button>
+      </div>`;
+  }
+  if (ui.state === "importing") {
+    return `
+      <div class="auth-progress" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="auth-card-head centered">
+        <span class="auth-step">Importing</span>
+        <h2 tabindex="-1">Importing your archive…</h2>
+        <p>${ui.archivePath ? escapeHtml(ui.archivePath.split("/").pop()) : "Reading the ZIP on this machine."} Large exports can take a minute.</p>
+      </div>`;
+  }
+  if (ui.state === "import_error") {
+    return `
+      <div class="auth-error-mark" aria-hidden="true">!</div>
+      <div class="auth-card-head">
+        <span class="auth-step">Import could not finish</span>
+        <h2 tabindex="-1">${escapeHtml(ui.errorCode === "html_export" ? "This ZIP is HTML, not JSON" : "Archive not imported")}</h2>
+        <p>${escapeHtml(ui.errorMessage || "Try another export ZIP.")}</p>
+      </div>
+      <button type="button" class="auth-primary" data-auth-action="import-archive">Choose another ZIP <span>↗</span></button>
+      <button type="button" class="auth-secondary-wide" data-auth-action="back-home">Back</button>`;
+  }
+  if (ui.state === "import_done") {
+    const counts = ui.importResult?.counts ?? {};
+    const summary = [
+      counts.posts && `${formatNumber(counts.posts)} posts`,
+      counts.directMessages && `${formatNumber(counts.directMessages)} DMs`,
+      counts.followers && `${formatNumber(counts.followers)} followers`,
+    ].filter(Boolean).join(" · ") || "Library updated";
+    return `
+      <div class="auth-success-profile">
+        <span class="auth-archive-mark" aria-hidden="true">ZIP</span>
+        <i aria-hidden="true">✓</i>
+      </div>
+      <div class="auth-card-head centered">
+        <span class="auth-step">Archive imported</span>
+        <h2 tabindex="-1">Your library is ready</h2>
+        <p>${escapeHtml(summary)}. Live sync stays optional for small updates later.</p>
+      </div>
+      <button type="button" class="auth-primary" data-auth-action="open-workspace">Open workspace <span>↗</span></button>
+      <button type="button" class="auth-secondary-wide" data-auth-action="show-login">Enable update sync (optional)</button>`;
+  }
+  if (ui.state === "login") {
+    return `
+      <div class="auth-card-head">
+        <span class="auth-step">Optional · updates only</span>
+        <h2 tabindex="-1">Enable update sync</h2>
+        <p>Sign in only to append recent changes after your archive import. Do not use this to download your full history.</p>
       </div>
       <form id="auth-login-form" class="auth-form">
         <label>Instagram username
@@ -227,25 +338,34 @@ function authStateCard(ui) {
         <label>Password
           <span class="auth-input"><input name="password" type="password" autocomplete="current-password" required><button type="button" class="reveal-secret" data-auth-action="toggle-password" aria-label="Show password">Show</button></span>
         </label>
-        <label class="risk-check"><input name="acceptRisk" type="checkbox" required><span>${escapeHtml("Direct sign-in uses Instagram's unofficial private API. Instagram may challenge, restrict, or ban accounts that use it; continue only with an account you control.")}</span></label>
-        <button class="auth-primary" type="submit">Connect Instagram <span>↗</span></button>
+        <label class="risk-check"><input name="acceptRisk" type="checkbox" required><span>${escapeHtml("Direct sign-in uses Instagram's unofficial private API. Instagram may challenge or restrict accounts that use it — only continue with an account you control. Prefer your official archive for history.")}</span></label>
+        <button class="auth-primary" type="submit">Enable update sync <span>↗</span></button>
       </form>
-      <p class="auth-privacy">Your password goes directly from this form to the local Gramclaw process and is discarded after sign-in. Your reusable session is saved in your system credential store. It is never placed in SQLite or Gramclaw backups.</p>
+      <p class="auth-privacy">Password is discarded after sign-in. Session stays in your system keychain. Prefer Sync for small appends — not bulk history download.</p>
       <div class="auth-alternatives" aria-label="Other ways to begin">
         <button type="button" data-auth-action="import-archive">Import an archive instead</button>
         <button type="button" data-auth-action="use-browser">Use a signed-in browser</button>
+        <button type="button" data-auth-action="back-home">Back</button>
       </div>`;
   }
   if (ui.state === "preparing_runtime" || ui.state === "signing_in") {
-    const preparing = ui.state === "preparing_runtime";
     return `
       <div class="auth-progress-mark" aria-hidden="true"><span>g</span><i></i></div>
       <div class="auth-card-head centered">
-        <span class="auth-step">${preparing ? "Preparing runtime" : "Instagram sign-in"}</span>
-        <h2 tabindex="-1">${preparing ? "Preparing secure sign-in…" : `Signing in as @${escapeHtml(ui.username)}…`}</h2>
-        <p>${preparing ? "Checking Python 3.10+, locked packages, and your system credential store." : "Instagram may take a moment or ask for one more verification step."}</p>
+        <span class="auth-step">Connecting</span>
+        <h2 tabindex="-1">Signing in as @${escapeHtml(ui.username)}…</h2>
+        <p>Instagram may ask for a code or app approval. That is normal.</p>
       </div>
       <button type="button" class="text-button auth-cancel" data-auth-action="cancel">Cancel</button>`;
+  }
+  if (ui.state === "verifying") {
+    return `
+      <div class="auth-progress" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="auth-card-head centered">
+        <span class="auth-step">Almost done</span>
+        <h2 tabindex="-1">Finishing connection…</h2>
+        <p>Checking that update sync works. This does not use your password again.</p>
+      </div>`;
   }
   if (["needs_2fa", "needs_challenge_code"].includes(ui.state)) {
     const challenge = ui.state === "needs_challenge_code";
@@ -270,9 +390,9 @@ function authStateCard(ui) {
     return `
       <div class="auth-manual-mark" aria-hidden="true">↗</div>
       <div class="auth-card-head">
-        <span class="auth-step">Official Instagram checkpoint</span>
+        <span class="auth-step">Approve in Instagram</span>
         <h2 tabindex="-1">Approve this login in Instagram</h2>
-        <p>Open the official Instagram app or website, finish the checkpoint, then return here. Gramclaw will retry once with the same device identity.</p>
+        <p>Open the official Instagram app, approve the login, then tap continue here.</p>
       </div>
       <button type="button" class="auth-primary" data-auth-action="approved">I've approved it — continue <span>↗</span></button>
       <button type="button" class="text-button auth-cancel" data-auth-action="cancel">Cancel</button>`;
@@ -285,11 +405,11 @@ function authStateCard(ui) {
         <i aria-hidden="true">✓</i>
       </div>
       <div class="auth-card-head centered">
-        <span class="auth-step">Ready on this Mac</span>
+        <span class="auth-step">Update sync ready</span>
         <h2 tabindex="-1">Connected as @${escapeHtml(result.username)}</h2>
-        <p>Session saved securely · password not saved.</p>
+        <p>Session saved securely · password not saved. Use Sync for small appends after your archive.</p>
       </div>
-      <button type="button" class="auth-primary" data-auth-action="sync-30">Sync 30 recent posts <span>↻</span></button>
+      <button type="button" class="auth-primary" data-auth-action="sync-30">Append 30 recent posts <span>↻</span></button>
       <button type="button" class="auth-secondary-wide" data-auth-action="open-workspace">Open workspace</button>`;
   }
   const detail = authErrorCopy(ui.errorCode, ui.errorMessage);
@@ -297,31 +417,37 @@ function authStateCard(ui) {
   return `
     <div class="auth-error-mark" aria-hidden="true">!</div>
     <div class="auth-card-head">
-      <span class="auth-step">${sessionSaved ? "Session saved · verification pending" : "Sign-in stopped safely"}</span>
+      <span class="auth-step">${sessionSaved ? "Signed in · sync check failed" : "Sign-in stopped"}</span>
       <h2 tabindex="-1">${escapeHtml(detail.title)}</h2>
       <p>${escapeHtml(detail.message)}</p>
     </div>
-    ${sessionSaved ? '<button type="button" class="auth-primary" data-auth-action="verify">Verify session <span>↗</span></button>' : '<button type="button" class="auth-primary" data-auth-action="try-again">Try again <span>↗</span></button>'}
+    ${sessionSaved ? '<button type="button" class="auth-primary" data-auth-action="verify">Try sync check again <span>↗</span></button>' : '<button type="button" class="auth-primary" data-auth-action="try-again">Try again <span>↗</span></button>'}
     <button type="button" class="auth-secondary-wide" data-auth-action="open-workspace">Open local workspace</button>`;
 }
 
 function authErrorCopy(code, fallback) {
-  return {
+  const copy = {
     bad_credentials: ["Instagram did not accept those details.", "Check them in the official Instagram app before trying again. Repeated attempts can trigger restrictions."],
-    throttled: ["Stop here and let the account cool down.", "Instagram asked Gramclaw to wait. Your saved device identity is preserved; do not retry repeatedly."],
-    runtime_unavailable: ["Python 3.10+ is needed.", "Install or configure a supported Python runtime, then try direct sign-in again."],
-    keyring_unavailable: ["A secure credential store is unavailable.", "Configure your operating system keyring, or use an archive or signed-in browser instead."],
-    web_cookie_bridge_unavailable: ["The session is saved, but web sync is not verified.", "No password retry is needed. Use Verify session to retry Gramclaw's existing web transport check."],
-    manual_verification_required: ["Finish this checkpoint in Instagram.", "Use the official app or website, then reconnect with Gramclaw."],
-    session_expired: ["The saved session has expired.", "Reconnect with the same saved device identity. Gramclaw will not sign in again in the background."],
-    cancelled: ["Sign-in cancelled.", "Nothing was saved. Your local library is unchanged."],
-    protocol_error: ["Secure sign-in could not finish.", "No credentials were exposed. Try again, or use a signed-in browser or archive."],
+    throttled: ["Stop here and let the account cool down.", "Instagram asked Gramclaw to wait. Do not retry repeatedly."],
+    runtime_unavailable: ["Python 3.10+ is needed for direct sign-in.", "Install Python, then try again — or import an archive / use a signed-in browser."],
+    keyring_unavailable: ["A secure credential store is unavailable.", "Fix your OS keychain, or use an archive / signed-in browser instead."],
+    web_cookie_bridge_unavailable: ["Signed in, but live sync is not ready yet.", "Tap try again to re-check. No password needed."],
+    manual_verification_required: ["Finish this checkpoint in Instagram.", "Use the official app or website, then reconnect."],
+    session_expired: ["The saved session has expired.", "Sign in again with the same account."],
+    cancelled: ["Sign-in cancelled.", "Nothing was saved."],
+    protocol_error: ["Sign-in could not finish.", "Try again, or continue with an archive."],
   }[code] ?? ["Sign-in could not finish.", fallback || "Try again, or continue with your local archive."];
+  return { title: copy[0], message: copy[1] };
 }
 
 async function handleAuthSubmit(event) {
-  if (!["auth-login-form", "auth-code-form"].includes(event.target.id)) return;
+  if (!["auth-login-form", "auth-code-form", "auth-import-form"].includes(event.target.id)) return;
   event.preventDefault();
+  if (event.target.id === "auth-import-form") {
+    const path = event.target.elements.path.value.trim();
+    await runArchiveImport(path);
+    return;
+  }
   if (event.target.id === "auth-code-form") {
     const input = event.target.elements.code;
     let value = input.value;
@@ -335,6 +461,7 @@ async function handleAuthSubmit(event) {
   const username = form.elements.username.value.trim().replace(/^@/, "");
   form.elements.password.value = "";
   state.authUi = {
+    ...state.authUi,
     state: "preparing_runtime",
     attemptId: null,
     prompt: null,
@@ -390,24 +517,59 @@ async function handleAuthClick(event) {
   }
   if (action === "approved") {
     await respondToAuthPrompt("continue");
-  } else if (action === "cancel" || action === "back") {
+  } else if (action === "cancel") {
+    await cancelAuthAttempt();
+    state.authUi.state = "login";
+    state.authUi.prompt = null;
+    state.authUi.attemptId = null;
+    renderAuthPanel();
+  } else if (action === "back") {
+    await cancelAuthAttempt();
+    state.authUi.state = "login";
+    state.authUi.prompt = null;
+    state.authUi.attemptId = null;
+    renderAuthPanel();
+  } else if (action === "back-home") {
     await cancelAuthAttempt();
     state.authUi.state = "idle";
     state.authUi.prompt = null;
     state.authUi.attemptId = null;
+    state.authUi.errorCode = null;
     renderAuthPanel();
   } else if (action === "try-again") {
-    state.authUi.state = "idle";
+    state.authUi.state = "login";
     state.authUi.errorCode = null;
     renderAuthPanel();
   } else if (action === "open-workspace") {
     await dismissOnboarding();
   } else if (action === "import-archive") {
-    await dismissOnboarding();
-    toast("Import with: gramclaw import archive <instagram-export.zip>");
+    state.authUi.state = "import";
+    state.authUi.errorCode = null;
+    renderAuthPanel();
+    await loadArchiveCandidates();
+  } else if (action === "refresh-archives") {
+    await loadArchiveCandidates();
+  } else if (action === "select-archive") {
+    const path = element.dataset.path;
+    const importable = element.dataset.importable === "1";
+    state.authUi.archivePath = path;
+    if (!importable) {
+      state.authUi.state = "import_error";
+      state.authUi.errorCode = "unsupported_archive";
+      state.authUi.errorMessage = "That ZIP does not look like an Instagram JSON or HTML export.";
+      renderAuthPanel();
+      return;
+    }
+    renderAuthPanel();
+  } else if (action === "import-path") {
+    await runArchiveImport(element.dataset.path);
+  } else if (action === "show-login") {
+    state.authUi.state = "login";
+    state.authUi.errorCode = null;
+    renderAuthPanel();
   } else if (action === "use-browser") {
     await dismissOnboarding();
-    toast("Sign in at instagram.com in a supported browser, then choose Sync.");
+    toast("Sign in at instagram.com in a supported browser, then use Sync for small updates.");
   } else if (action === "sync-30") {
     await dismissOnboarding();
     els.sync.classList.add("loading");
@@ -416,7 +578,7 @@ async function handleAuthClick(event) {
         method: "POST",
         body: JSON.stringify({ stream: "posts", mode: "cookie", limit: 30 }),
       });
-      toast(`Synced ${formatNumber(result.counts?.posts ?? 0)} recent posts`);
+      toast(`Appended ${formatNumber(result.counts?.posts ?? 0)} recent posts`);
       await refreshStatus();
       await render();
     } catch (error) {
@@ -425,7 +587,55 @@ async function handleAuthClick(event) {
       els.sync.classList.remove("loading");
     }
   } else if (action === "verify") {
+    state.authUi.state = "verifying";
+    renderAuthPanel();
     await verifyConnection(true);
+  }
+}
+
+async function loadArchiveCandidates() {
+  try {
+    const result = await api("/api/archive/find");
+    state.authUi.archives = result.items ?? [];
+  } catch (error) {
+    state.authUi.archives = [];
+    toast(error.message);
+  }
+  if (state.authUi.state === "import") renderAuthPanel();
+}
+
+async function runArchiveImport(archivePath) {
+  const path = String(archivePath ?? "").trim();
+  if (!path) {
+    toast("Choose an archive ZIP or paste its path.");
+    return;
+  }
+  state.authUi.archivePath = path;
+  state.authUi.state = "importing";
+  state.authUi.errorCode = null;
+  state.authUi.errorMessage = null;
+  renderAuthPanel();
+  try {
+    const result = await api("/api/archive/import", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+    const imported = Object.values(result.counts ?? {}).reduce((sum, value) => sum + Number(value || 0), 0);
+    if (!imported) {
+      throw Object.assign(new Error("No Instagram data was found in that archive."), { code: "empty_archive" });
+    }
+    state.authUi.importResult = result;
+    state.authUi.state = "import_done";
+    await Promise.all([refreshStatus(), refreshAuthStatus()]);
+    renderAuthPanel();
+    toast(`Imported ${formatNumber(imported)} items into your local library.`);
+  } catch (error) {
+    const message = error.message ?? "Archive import failed.";
+    state.authUi.state = "import_error";
+    state.authUi.errorCode = /HTML format/i.test(message) ? "html_export" : (error.code ?? "import_failed");
+    state.authUi.errorMessage = message;
+    renderAuthPanel();
+    toast(message);
   }
 }
 
@@ -468,13 +678,19 @@ async function applyAuthResponse(result) {
   if (result.connected && result.verified) {
     state.authUi.state = "success";
     await Promise.all([refreshStatus(), refreshAuthStatus()]);
-  } else if (result.connected) {
-    state.authUi.state = "error";
-    state.authUi.errorCode = result.errorCode ?? "web_cookie_bridge_unavailable";
-  } else {
-    state.authUi.state = "error";
-    state.authUi.errorCode = result.errorCode ?? "protocol_error";
+    renderAuthPanel();
+    return;
   }
+  if (result.connected) {
+    // Session is saved; finish the web-bridge check automatically so users
+    // are not stuck on a manual "Verify session" dead-end.
+    state.authUi.state = "verifying";
+    renderAuthPanel();
+    await verifyConnection(true);
+    return;
+  }
+  state.authUi.state = "error";
+  state.authUi.errorCode = result.errorCode ?? "protocol_error";
   renderAuthPanel();
 }
 
@@ -542,36 +758,46 @@ function connectionInfo() {
 function renderAccountPill() {
   if (!els.accountPill) return;
   const info = connectionInfo();
-  const username = info.username ? `@${info.username}` : info.connected ? "Instagram" : "Connect Instagram";
+  const username = info.username
+    ? `@${info.username}`
+    : info.connected
+      ? "Instagram"
+      : "Import archive";
+  const detail = info.connected ? info.detail : "Archive first · sync optional";
   els.accountPill.classList.toggle("connected", info.connected);
   els.accountPill.innerHTML = `
     ${info.connected && info.username ? avatar(info.username, state.status?.account?.avatar_url) : "<span class=\"account-placeholder\">g</span>"}
     <i aria-hidden="true"></i>
-    <span><strong>${escapeHtml(username)}</strong><small>${escapeHtml(info.detail)}</small></span>`;
+    <span><strong>${escapeHtml(username)}</strong><small>${escapeHtml(detail)}</small></span>`;
 }
 
 function openConnectionDialog() {
   const info = connectionInfo();
   els.connectionContent.innerHTML = `
     <div class="connection-sheet">
-      <p class="eyebrow">Live connection</p>
-      <h2 id="connection-title">${info.connected ? escapeHtml(`@${info.username ?? "Instagram"}`) : "Connect Instagram"}</h2>
-      <p>${escapeHtml(info.source)} · ${escapeHtml(info.detail)}</p>
+      <p class="eyebrow">Library + updates</p>
+      <h2 id="connection-title">${info.connected ? escapeHtml(`@${info.username ?? "Instagram"}`) : "Import archive first"}</h2>
+      <p>${info.connected
+        ? `${escapeHtml(info.source)} · ${escapeHtml(info.detail)}`
+        : "Load your official Meta ZIP for history. Enable update sync only for small appends afterward."}</p>
       ${info.lastVerifiedAt ? `<dl><dt>Last verified</dt><dd>${escapeHtml(relativeTime(info.lastVerifiedAt))}</dd></dl>` : ""}
       <div class="connection-actions">
-        ${info.connected ? '<button class="secondary-button" data-connection-action="verify">Verify session</button>' : ""}
-        <button class="secondary-button" data-connection-action="reconnect">${info.connected ? "Reconnect" : "Connect Instagram"}</button>
+        ${info.connected ? '<button class="secondary-button" data-connection-action="verify">Verify session</button>' : '<button class="secondary-button" data-connection-action="import">Import archive ZIP</button>'}
+        <button class="secondary-button" data-connection-action="reconnect">${info.connected ? "Reconnect" : "Enable update sync"}</button>
         ${info.direct ? '<button class="text-button danger" data-connection-action="disconnect">Disconnect</button>' : ""}
       </div>
-      <p class="connection-local"><i></i> Your SQLite library stays on this machine whether or not live sync is connected.</p>
+      <p class="connection-local"><i></i> Prefer archive import for history. Live sync is for appending updates, not bulk download.</p>
     </div>`;
   els.connectionDialog.showModal();
 }
 
 async function handleConnectionAction(action) {
-  if (action === "reconnect") {
+  if (action === "import") {
     els.connectionDialog.close();
-    showOnboarding();
+    showOnboarding({ mode: "import" });
+  } else if (action === "reconnect") {
+    els.connectionDialog.close();
+    showOnboarding({ mode: "login" });
   } else if (action === "verify") {
     await verifyConnection(false);
   } else if (action === "disconnect") {
@@ -603,12 +829,17 @@ async function verifyConnection(showInOnboarding) {
     } else if (showInOnboarding) {
       state.authUi.result = result;
       showAuthError(result.errorCode, result.message);
+      toast(result.message ?? "Signed in, but live sync is not ready yet.");
     } else {
       toast(result.message ?? "Session saved, but web sync is not verified.");
     }
   } catch (error) {
-    if (showInOnboarding) showAuthError(error.code, error.message);
-    else toast(error.message);
+    if (showInOnboarding) {
+      showAuthError(error.code, error.message);
+      toast(error.message);
+    } else {
+      toast(error.message);
+    }
   }
 }
 
@@ -1411,6 +1642,14 @@ function dateInput(value) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat(undefined, { notation: Number(value) >= 10_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(Number(value || 0));
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / (1024 ** 2)).toFixed(1)} MB`;
+  return `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
 }
 
 function emptyState(title, detail) {

@@ -243,6 +243,50 @@ class SidecarTests(unittest.TestCase):
         self.assertEqual(hydrated.user_id, "123")
         self.assertEqual(hydrated.username, "example")
 
+    def test_bridge_promotes_sessionid_from_authorization_data(self):
+        keyring = MemoryKeyring()
+        store = MODULE.CredentialStore(keyring)
+        auth_settings = {
+            "cookies": {"csrftoken": CSRF, "mid": "mid-canary"},
+            "authorization_data": {
+                "sessionid": SESSION,
+                "ds_user_id": "123",
+            },
+        }
+        store.set(
+            "ig:123",
+            {
+                "schema": 1,
+                "username": "example",
+                "userId": "123",
+                "settings": auth_settings,
+            },
+        )
+        client = FakeClient()
+        original_set_settings = client.set_settings
+
+        def set_settings(settings):
+            original_set_settings(settings)
+            client._authorization_data = dict(settings.get("authorization_data") or {})
+
+        def get_settings():
+            return {
+                "cookies": client.cookie_dict,
+                "authorization_data": dict(getattr(client, "_authorization_data", {})),
+            }
+
+        client.set_settings = set_settings
+        client.get_settings = get_settings
+        sidecar = MODULE.InstagramSidecar(
+            MODULE.Dependencies(client_factory=lambda: client, keyring=keyring)
+        )
+        result = sidecar.credentials({"credentialId": "ig:123"})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["credentials"]["cookies"]["sessionid"], SESSION)
+        self.assertEqual(result["credentials"]["cookies"]["csrftoken"], CSRF)
+        self.assertEqual(result["credentials"]["cookies"]["ds_user_id"], "123")
+        self.assertTrue(sidecar.verify({"credentialId": "ig:123"})["bridgeAvailable"])
+
     def test_two_factor_prompt_resumes_in_same_process_without_leaking_code(self):
         response = json.dumps(
             {
