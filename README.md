@@ -5,16 +5,20 @@ memory workspace inspired by Birdclaw. It turns an Instagram data export into a
 private, searchable library with media analysis, natural-language visual
 search, Smart Saved organization, and exportable moodboards.
 
-[Try the public demo](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/#demo) ·
-[Visit the product site](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/) ·
-[Download v1.1](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/downloads/gramclaw-1.1.0.tgz)
-
 The public demo uses fictional sample content and requires no Instagram login.
 Your real archive stays on your own computer when you install Gramclaw.
 
+## Privacy
+
+This repository, the public demo, and the downloadable release do **not**
+contain the maintainer's Instagram username, profile, cookies, messages, Saved
+items, Liked items, or archive. Every installation creates a separate local
+workspace for that user, and it reads only the data that user chooses to import
+or sync from their own signed-in browser.
+
 ## See it in action
 
-[![Gramclaw hybrid visual search showing why each result matched](./public/demo-search.jpg)](https://gramclaw-instagram-memory.jingjing768.chatgpt.site/#demo)
+![Gramclaw hybrid visual search showing why each result matched](./public/demo-search.jpg)
 
 Ask for a visual memory in ordinary language, combine semantic image, caption,
 OCR, date, creator, color, media-type, Saved, and Liked filters, then see why
@@ -42,7 +46,7 @@ notes, and export the board as an image or PDF.
 Node.js 22.13 or newer is required. The installable app lives in `gramclaw/`.
 
 ```bash
-git clone https://github.com/tmad4000/gramclaw.git
+git clone https://github.com/artjing/gramclaw.git
 cd gramclaw/gramclaw
 npm install
 npm link

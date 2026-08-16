@@ -9,7 +9,7 @@ It is inspired by the local-first architecture of Birdclaw, translated to Instag
 Node.js 22.13 or newer is required.
 
 ```bash
-git clone https://github.com/tmad4000/gramclaw.git
+git clone https://github.com/artjing/gramclaw.git
 cd gramclaw/gramclaw
 npm install
 npm link
