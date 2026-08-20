@@ -578,6 +578,15 @@ function fakeAuthApi(overrides = {}) {
     }),
     verify: async () => ({ ok: true, connected: true, verified: true }),
     logout: async () => ({ ok: true, disconnected: true, deleted: true }),
+    connectBrowser: async () => ({
+      ok: true,
+      connected: true,
+      verified: true,
+      username: "browser-user",
+      userId: "123",
+      credentialSource: "browser",
+      passwordStored: false,
+    }),
     ...overrides,
   };
 }
@@ -656,6 +665,92 @@ test("web auth routes handle login, challenge response, status, verify, and logo
   });
 });
 
+test("web auth routes open Instagram and connect a signed-in browser session", async () => {
+  const opened = [];
+  await withAuthServer({
+    openUrl: (url) => opened.push(url),
+  }, async ({ url }) => {
+    const open = await authFetch(url, "/api/auth/browser/open", {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(open.status, 200);
+    const openedPayload = await open.json();
+    assert.equal(openedPayload.ok, true);
+    assert.equal(openedPayload.url, "https://www.instagram.com/accounts/login/");
+    assert.deepEqual(opened, ["https://www.instagram.com/accounts/login/"]);
+
+    const connected = await authFetch(url, "/api/auth/browser/connect", {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(connected.status, 200);
+    const session = await connected.json();
+    assert.equal(session.connected, true);
+    assert.equal(session.username, "browser-user");
+    assert.equal(session.credentialSource, "browser");
+    assert.equal(session.passwordStored, false);
+  });
+});
+
+test("web auth routes connect automatically when the login window returns cookies", async () => {
+  let connectedWith;
+  await withAuthServer({
+    openUrl: async () => ({
+      cookies: [
+        { name: "sessionid", value: "sid-canary", domain: ".instagram.com" },
+        { name: "csrftoken", value: "csrf-canary", domain: ".instagram.com" },
+      ],
+    }),
+    instagramAuth: fakeAuthApi({
+      connectBrowser: async (options = {}) => {
+        connectedWith = options;
+        return {
+          ok: true,
+          connected: true,
+          verified: true,
+          username: "webview-user",
+          userId: "9",
+          credentialSource: "webview",
+          passwordStored: false,
+        };
+      },
+    }),
+  }, async ({ url }) => {
+    const open = await authFetch(url, "/api/auth/browser/open", {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(open.status, 200);
+    const payload = await open.json();
+    assert.equal(payload.connected, true);
+    assert.equal(payload.username, "webview-user");
+    assert.equal(connectedWith?.cookies?.length, 2);
+    assert.doesNotMatch(JSON.stringify(payload), /sid-canary|csrf-canary/);
+  });
+});
+
+test("web auth routes reject a missing browser session without contacting Instagram payloads", async () => {
+  await withAuthServer({
+    instagramAuth: fakeAuthApi({
+      connectBrowser: async () => {
+        const error = new Error("No signed-in Instagram browser session was found. Tap Open Instagram, sign in in the Gramclaw login window, then continue.");
+        error.code = "browser_session_unavailable";
+        throw error;
+      },
+    }),
+  }, async ({ url }) => {
+    const response = await authFetch(url, "/api/auth/browser/connect", {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(response.status, 400);
+    const payload = await response.json();
+    assert.equal(payload.code, "browser_session_unavailable");
+    assert.match(payload.error, /Gramclaw login window/);
+  });
+});
+
 test("web auth boundary rejects remote password login, bad origin, and missing app token", async () => {
   const previousRemote = process.env.GRAMCLAW_ALLOW_REMOTE_WEB;
   const previousToken = process.env.GRAMCLAW_WEB_TOKEN;
@@ -679,6 +774,12 @@ test("web auth boundary rejects remote password login, bad origin, and missing a
     });
     assert.equal(denied.status, 403);
     assert.equal((await denied.json()).code, "remote_login_disabled");
+    const deniedBrowser = await authFetch(remote.url, "/api/auth/browser/open", {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(deniedBrowser.status, 403);
+    assert.equal((await deniedBrowser.json()).code, "remote_login_disabled");
     await new Promise((resolvePromise) => server.close(resolvePromise));
     server = null;
 
@@ -910,11 +1011,16 @@ test("onboarding markup implements the required accessible states and secret-cle
     "Enable update sync",
     "Import an archive instead",
     "Use a signed-in browser",
+    "Use username and password instead",
+    "Open Instagram",
+    "I’ve signed in — continue",
+    "a Gramclaw login window opens",
     "I've approved it — continue",
     "Append 30 recent posts",
     "Session saved securely · password not saved.",
     "Direct sign-in uses Instagram's unofficial private API.",
     "Finishing connection…",
+    "Looking for your Instagram session…",
     "Choose your ZIP",
   ]) {
     assert.match(app, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -926,6 +1032,8 @@ test("onboarding markup implements the required accessible states and secret-cle
     "import_done",
     "import_error",
     "login",
+    "password",
+    "browser_connecting",
     "preparing_runtime",
     "signing_in",
     "verifying",

@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { getCookies, toCookieHeader } from "@steipete/sweet-cookie";
+import { toCookieHeader } from "@steipete/sweet-cookie";
 import { imageSize } from "image-size";
+import { loadBrowserCookies } from "./browser-cookies.js";
 import {
   addCollection,
   defaultAccount,
   ensureAccount,
   getDb,
+  setDefaultAccount,
   rebuildFts,
   recordFollowSnapshot,
   upsertComment,
@@ -33,12 +35,13 @@ import {
 } from "./instagram-auth.js";
 
 const WEB_BASE = "https://www.instagram.com";
+export const INSTAGRAM_LOGIN_URL = `${WEB_BASE}/accounts/login/`;
 const WEB_APP_ID = "936619743392459";
 
 export async function authStatus(options = {}) {
   let cookie;
   try {
-    const credentials = await resolveCredentials(options);
+    const credentials = await resolveCredentials({ ...options, skipSystemBrowsers: true });
     cookie = {
       available: Boolean(credentials.sessionId && credentials.csrfToken),
       userId: credentials.userId || null,
@@ -85,7 +88,7 @@ export async function resolveCredentials(options = {}) {
     };
   }
   let directWarning;
-  if (!Object.values(explicit).some(Boolean)) {
+  if (!options.skipDirect && !Object.values(explicit).some(Boolean)) {
     try {
       const direct = await (options.directCredentialLoader ?? loadDirectCredentials)(options);
       if (direct?.sessionId && direct?.csrfToken) return direct;
@@ -96,16 +99,7 @@ export async function resolveCredentials(options = {}) {
     }
   }
   const browsers = normalizeBrowserSources(options.cookieSource);
-  const result = await (options.browserCookieLoader ?? getCookies)({
-    url: `${WEB_BASE}/`,
-    names: ["sessionid", "csrftoken", "ds_user_id", "mid", "ig_did", "rur", "datr", "dpr"],
-    ...(browsers.length ? { browsers } : {}),
-    ...(options.chromeProfile ? { chromeProfile: options.chromeProfile } : {}),
-    ...(options.firefoxProfile ? { firefoxProfile: options.firefoxProfile } : {}),
-    ...(options.cookieFile ? { inlineCookiesFile: options.cookieFile } : {}),
-    timeoutMs: Number(options.cookieTimeout ?? 30_000),
-    mode: "first",
-  });
+  const result = await loadBrowserCookieResult(options, browsers);
   const cookieMap = new Map(result.cookies.map((cookie) => [cookie.name, cookie.value]));
   const sessionId = explicit.sessionid ?? cookieMap.get("sessionid") ?? "";
   const csrfToken = explicit.csrftoken ?? cookieMap.get("csrftoken") ?? "";
@@ -127,6 +121,30 @@ export async function resolveCredentials(options = {}) {
     source: cookies[0]?.source?.browser ?? (options.cookieFile ? "cookie-file" : "browser"),
     warnings: [...result.warnings, ...(directWarning ? [directWarning] : [])],
   };
+}
+
+async function loadBrowserCookieResult(options, browsers) {
+  if (options.browserCookieLoader) {
+    return options.browserCookieLoader({
+      url: `${WEB_BASE}/`,
+      names: ["sessionid", "csrftoken", "ds_user_id", "mid", "ig_did", "rur", "datr", "dpr"],
+      ...(browsers.length ? { browsers } : {}),
+      ...(options.chromeProfile ? { chromeProfile: options.chromeProfile } : {}),
+      ...(options.firefoxProfile ? { firefoxProfile: options.firefoxProfile } : {}),
+      ...(options.cookieFile ? { inlineCookiesFile: options.cookieFile } : {}),
+      timeoutMs: Number(options.cookieTimeout ?? 30_000),
+      mode: "merge",
+    });
+  }
+  return loadBrowserCookies({
+    cookies: options.cookies,
+    webviewLogin: options.webviewLogin,
+    skipSystemBrowsers: options.skipSystemBrowsers,
+    webviewCookieLoader: options.webviewCookieLoader,
+    browsers: browsers.length ? browsers : undefined,
+    chromeProfile: options.chromeProfile,
+    cookieTimeout: options.cookieTimeout,
+  });
 }
 
 function normalizeBrowserSources(value) {
@@ -151,7 +169,7 @@ export async function webRequest(path, options = {}) {
     "accept-language": "en-US,en;q=0.9",
     cookie: credentials.cookieHeader,
     referer: options.referer ?? `${WEB_BASE}/`,
-    "user-agent": options.userAgent ?? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/136 Safari/537.36",
+    "user-agent": options.userAgent ?? userAgentFor(credentials),
     "x-asbd-id": "129477",
     "x-csrftoken": credentials.csrfToken,
     "x-ig-app-id": options.appId ?? WEB_APP_ID,
@@ -236,6 +254,77 @@ export async function webWhoAmI(options = {}) {
     }
   }
   throw lastError;
+}
+
+export async function connectBrowserSession(options = {}) {
+  const credentials = await resolveCredentials({
+    ...options,
+    skipDirect: true,
+    webviewLogin: true,
+    skipSystemBrowsers: true,
+  });
+  if (!credentials.sessionId || !credentials.csrfToken) {
+    const error = new Error(browserSessionError(credentials.warnings));
+    error.code = "browser_session_unavailable";
+    throw error;
+  }
+  let identity;
+  try {
+    identity = await webWhoAmI({ ...options, credentials, skipDirect: true });
+  } catch {
+    const error = new Error(
+      "The Gramclaw login window signed in, but Instagram rejected that session when Gramclaw reused it. Archive import remains the reliable path.",
+    );
+    error.code = "browser_session_unavailable";
+    throw error;
+  }
+  if (!identity.username && !identity.id) {
+    const error = new Error(browserSessionError(credentials.warnings));
+    error.code = "browser_session_unavailable";
+    throw error;
+  }
+  const db = getDb();
+  const account = ensureAccount(db, {
+    externalUserId: identity.id || null,
+    username: identity.username,
+    displayName: identity.displayName,
+    avatarUrl: identity.avatarUrl,
+    transport: "cookie",
+    isDefault: true,
+  });
+  setDefaultAccount(db, account.id);
+  return {
+    ok: true,
+    connected: true,
+    verified: true,
+    username: identity.username,
+    userId: identity.id,
+    displayName: identity.displayName,
+    avatarUrl: identity.avatarUrl,
+    credentialSource: identity.credentialSource ?? "browser",
+    passwordStored: false,
+  };
+}
+
+function userAgentFor(credentials) {
+  if (credentials?.source === "webview") {
+    return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+  }
+  return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/136 Safari/537.36";
+}
+
+function browserSessionError(warnings = []) {
+  const text = warnings.join(" ");
+  if (/no signed-in Instagram session yet/i.test(text)) {
+    return "Tap Open Instagram, sign in in the Gramclaw login window, then continue.";
+  }
+  if (/Could not read cookies from the Gramclaw login window/i.test(text)) {
+    return "Tap Open Instagram, sign in in the Gramclaw login window, then continue.";
+  }
+  if (/available on macOS/i.test(text)) {
+    return "The Gramclaw login window is available on macOS. Import an archive, or use username and password.";
+  }
+  return "No signed-in Instagram browser session was found. Tap Open Instagram, sign in in the Gramclaw login window, then continue.";
 }
 
 function parseSetCookieHeaders(headers) {
@@ -343,7 +432,11 @@ async function syncWeb(stream, options = {}) {
     values (?, ?, ?, 'cookie', 'running', ?)
   `).run(runId, existingAccount?.id ?? null, stream, startedAt);
   try {
-    const credentials = await resolveCredentials(options);
+    const credentials = await resolveCredentials({
+      ...options,
+      webviewLogin: true,
+      skipSystemBrowsers: true,
+    });
     const me = await webWhoAmI({ ...options, credentials });
     const account = ensureAccount(db, {
       externalUserId: me.id || credentials.userId,
@@ -774,7 +867,11 @@ export async function runWebAction(kind, target, input = {}, options = {}) {
     `).run(actionId, account?.id ?? "acct_unknown", kind, target ?? null, input.text ?? "", json(input, {}), nowIso(), nowIso());
     return { ok: true, draft: true, actionId, message: "Saved locally. Re-run with --yes to send." };
   }
-  const credentials = await resolveCredentials(options);
+  const credentials = await resolveCredentials({
+    ...options,
+    webviewLogin: true,
+    skipSystemBrowsers: true,
+  });
   const post = target
     ? db.prepare("select * from posts where id=? or external_media_id=? or shortcode=? limit 1").get(target, target, target)
     : null;
@@ -856,7 +953,11 @@ export async function uploadWebPhoto(input, options = {}) {
     `).run(actionId, account?.id ?? "acct_unknown", input.story ? "story" : "post", input.caption ?? "", json(input, {}), nowIso(), nowIso());
     return { ok: true, draft: true, actionId, message: "Saved locally. Re-run with --yes to publish." };
   }
-  const credentials = await resolveCredentials(options);
+  const credentials = await resolveCredentials({
+    ...options,
+    webviewLogin: true,
+    skipSystemBrowsers: true,
+  });
   const bytes = readFileSync(input.file);
   const dimensions = imageSize(bytes);
   const uploadId = String(Date.now());

@@ -7,14 +7,16 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Direct Instagram authentication is intentionally a credential source, not a
   data transport. The authoritative boundaries are
   `gramclaw/python/gramclaw_instagram.py`,
-  `gramclaw/src/instagram-auth.js`, and the adapter in
-  `gramclaw/src/live.js`.
+  `gramclaw/src/instagram-auth.js`, the adapter in `gramclaw/src/live.js`,
+  and the macOS WKWebView helper `gramclaw/native/macos-login.swift`
+  (launched from `gramclaw/src/webview-login.js`; tests must mock it).
 - Never add a password argument/environment variable or plaintext session
   fallback. Sessions remain in the OS keyring, while `config.json` contains
   only safe `auth.instagram` metadata.
-- A controlled-account check that instagrapi cookies work with the existing
-  `webWhoAmI()` web transport is a manual release gate; automated tests must
-  never perform a real Instagram login.
+- Manual release gates, never in CI: instagrapi cookies and WKWebView-helper
+  cookies must both work with `webWhoAmI()`. If the login window succeeds but
+  Instagram rejects cookie replay, stop iterating browser-cookie work and send
+  Instagram requests through the same WebView session.
 
 ## Maintaining this file
 

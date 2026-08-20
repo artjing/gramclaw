@@ -60,19 +60,15 @@ Imports are safe to run again later — new data merges in; it won’t wipe your
 
 Only do this if you want Gramclaw to fetch **recent updates** after the archive.
 
-You will also need:
-
-- Python 3.10+
-- Your Instagram username and password
-
 Then:
 
 1. In the app, choose **Enable update sync**
-2. Accept the risk note (this uses Instagram’s unofficial private API)
-3. Sign in and finish any 2FA / approval prompts
-4. Tap **Sync** when you want small updates appended
+2. Tap **Open Instagram** — a Gramclaw login window opens
+3. Sign in on Instagram’s official page (including any 2FA). Gramclaw connects when that window finishes.
+4. If it does not connect automatically, return here and tap **I’ve signed in — continue**
+5. Tap **Append 30 recent posts** when you want small updates
 
-Use Sync for recent changes — not as a replacement for the full Meta ZIP.
+This uses Gramclaw’s own login window, not everyday Chrome or Safari cookies. Sync is for recent changes — not as a replacement for the full Meta ZIP.
 
 ---
 
@@ -107,7 +103,7 @@ Make sure you selected an Instagram/Meta export ZIP (or the extracted folder). T
 Your library may already have data. Use the account button → **Import archive ZIP**.
 
 **Sync asks for a code**  
-Enter the 2FA / SMS code, or approve the login in the official Instagram app, then continue.
+Finish the code or approval in the Gramclaw login window (Instagram’s official page). If Gramclaw still cannot connect after that window shows you as signed in, Instagram rejected the reused session — use archive import instead.
 
 **I’d rather skip sync**  
 That’s fine. Archive import alone is the recommended path.

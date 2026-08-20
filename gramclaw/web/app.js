@@ -205,7 +205,7 @@ async function dismissOnboarding() {
 function renderAuthPanel() {
   const ui = state.authUi;
   const card = authStateCard(ui);
-  const busy = ["preparing_runtime", "signing_in", "verifying", "importing"].includes(ui.state);
+  const busy = ["preparing_runtime", "signing_in", "verifying", "importing", "browser_connecting"].includes(ui.state);
   els.onboarding.innerHTML = `
     <div class="auth-atmosphere" aria-hidden="true"><i></i><i></i><i></i></div>
     <div class="auth-layout">
@@ -329,6 +329,27 @@ function authStateCard(ui) {
       <div class="auth-card-head">
         <span class="auth-step">Optional · updates only</span>
         <h2 tabindex="-1">Enable update sync</h2>
+        <p>Sign in in the Gramclaw login window. 2FA stays on Instagram’s official page. Everyday Chrome tabs cannot be read.</p>
+      </div>
+      <ol class="auth-steps">
+        <li>Tap Open Instagram — a Gramclaw login window opens</li>
+        <li>Sign in there, including any code or approval Instagram asks for</li>
+        <li>That window can close after sign-in; Gramclaw connects automatically</li>
+      </ol>
+      <button type="button" class="auth-primary" data-auth-action="open-instagram" data-auth-autofocus>Open Instagram <span>↗</span></button>
+      <button type="button" class="auth-secondary-wide" data-auth-action="browser-connect">I’ve signed in — continue</button>
+      <p class="auth-privacy">This uses a Gramclaw login window on this computer, not your everyday Chrome cookies. The password is never stored.</p>
+      <div class="auth-alternatives" aria-label="Other ways to begin">
+        <button type="button" data-auth-action="import-archive">Import an archive instead</button>
+        <button type="button" data-auth-action="show-password-login">Use username and password instead</button>
+        <button type="button" data-auth-action="back-home">Back</button>
+      </div>`;
+  }
+  if (ui.state === "password") {
+    return `
+      <div class="auth-card-head">
+        <span class="auth-step">Optional · updates only</span>
+        <h2 tabindex="-1">Enable update sync</h2>
         <p>Sign in only to append recent changes after your archive import. Do not use this to download your full history.</p>
       </div>
       <form id="auth-login-form" class="auth-form">
@@ -344,8 +365,17 @@ function authStateCard(ui) {
       <p class="auth-privacy">Password is discarded after sign-in. Session stays in your system keychain. Prefer Sync for small appends — not bulk history download.</p>
       <div class="auth-alternatives" aria-label="Other ways to begin">
         <button type="button" data-auth-action="import-archive">Import an archive instead</button>
-        <button type="button" data-auth-action="use-browser">Use a signed-in browser</button>
+        <button type="button" data-auth-action="show-login">Use a signed-in browser</button>
         <button type="button" data-auth-action="back-home">Back</button>
+      </div>`;
+  }
+  if (ui.state === "browser_connecting") {
+    return `
+      <div class="auth-progress" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="auth-card-head centered">
+        <span class="auth-step">Checking browser</span>
+        <h2 tabindex="-1">Looking for your Instagram session…</h2>
+        <p>Waiting for the Gramclaw login window. Finish sign-in there; 2FA stays on Instagram’s page.</p>
       </div>`;
   }
   if (ui.state === "preparing_runtime" || ui.state === "signing_in") {
@@ -407,7 +437,9 @@ function authStateCard(ui) {
       <div class="auth-card-head centered">
         <span class="auth-step">Update sync ready</span>
         <h2 tabindex="-1">Connected as @${escapeHtml(result.username)}</h2>
-        <p>Session saved securely · password not saved. Use Sync for small appends after your archive.</p>
+        <p>${ui.result?.credentialSource === "instagrapi-session"
+          ? "Session saved securely · password not saved. Use Sync for small appends after your archive."
+          : "Gramclaw is using the session from the Gramclaw login window. Use Sync for small appends after your archive."}</p>
       </div>
       <button type="button" class="auth-primary" data-auth-action="sync-30">Append 30 recent posts <span>↻</span></button>
       <button type="button" class="auth-secondary-wide" data-auth-action="open-workspace">Open workspace</button>`;
@@ -432,6 +464,7 @@ function authErrorCopy(code, fallback) {
     runtime_unavailable: ["Python 3.10+ is needed for direct sign-in.", "Install Python, then try again — or import an archive / use a signed-in browser."],
     keyring_unavailable: ["A secure credential store is unavailable.", "Fix your OS keychain, or use an archive / signed-in browser instead."],
     web_cookie_bridge_unavailable: ["Signed in, but live sync is not ready yet.", "Tap try again to re-check. No password needed."],
+    browser_session_unavailable: ["Sign in at instagram.com first.", fallback || "Open the Gramclaw login window, finish any code or approval there, then continue."],
     manual_verification_required: ["Finish this checkpoint in Instagram.", "Use the official app or website, then reconnect."],
     session_expired: ["The saved session has expired.", "Sign in again with the same account."],
     cancelled: ["Sign-in cancelled.", "Nothing was saved."],
@@ -517,15 +550,10 @@ async function handleAuthClick(event) {
   }
   if (action === "approved") {
     await respondToAuthPrompt("continue");
-  } else if (action === "cancel") {
+  } else if (action === "cancel" || action === "back") {
+    const fromPassword = ["password", "preparing_runtime", "signing_in", "needs_2fa", "needs_challenge_code", "needs_manual_approval"].includes(state.authUi.state);
     await cancelAuthAttempt();
-    state.authUi.state = "login";
-    state.authUi.prompt = null;
-    state.authUi.attemptId = null;
-    renderAuthPanel();
-  } else if (action === "back") {
-    await cancelAuthAttempt();
-    state.authUi.state = "login";
+    state.authUi.state = fromPassword ? "password" : "login";
     state.authUi.prompt = null;
     state.authUi.attemptId = null;
     renderAuthPanel();
@@ -567,9 +595,14 @@ async function handleAuthClick(event) {
     state.authUi.state = "login";
     state.authUi.errorCode = null;
     renderAuthPanel();
-  } else if (action === "use-browser") {
-    await dismissOnboarding();
-    toast("Sign in at instagram.com in a supported browser, then use Sync for small updates.");
+  } else if (action === "show-password-login") {
+    state.authUi.state = "password";
+    state.authUi.errorCode = null;
+    renderAuthPanel();
+  } else if (action === "open-instagram") {
+    await openInstagramInBrowser();
+  } else if (action === "browser-connect") {
+    await connectBrowserSessionUi();
   } else if (action === "sync-30") {
     await dismissOnboarding();
     els.sync.classList.add("loading");
@@ -602,6 +635,48 @@ async function loadArchiveCandidates() {
     toast(error.message);
   }
   if (state.authUi.state === "import") renderAuthPanel();
+}
+
+async function openInstagramInBrowser() {
+  state.authUi.state = "browser_connecting";
+  state.authUi.errorCode = null;
+  state.authUi.errorMessage = null;
+  renderAuthPanel();
+  try {
+    const result = await api("/api/auth/browser/open", { method: "POST", body: "{}" });
+    if (result.connected) {
+      state.authUi.result = result;
+      state.authUi.state = "success";
+      await Promise.all([refreshStatus(), refreshAuthStatus()]);
+      renderAuthPanel();
+      toast(`Connected as @${result.username}`);
+      return;
+    }
+    state.authUi.state = "login";
+    renderAuthPanel();
+    toast("Sign in in the Gramclaw login window, then tap continue if it does not connect automatically.");
+  } catch (error) {
+    showAuthError(error.code ?? "browser_session_unavailable", error.message);
+    toast(error.message);
+  }
+}
+
+async function connectBrowserSessionUi() {
+  state.authUi.state = "browser_connecting";
+  state.authUi.errorCode = null;
+  state.authUi.errorMessage = null;
+  renderAuthPanel();
+  try {
+    const result = await api("/api/auth/browser/connect", { method: "POST", body: "{}" });
+    state.authUi.result = result;
+    state.authUi.state = "success";
+    await Promise.all([refreshStatus(), refreshAuthStatus()]);
+    renderAuthPanel();
+    toast(`Connected as @${result.username}`);
+  } catch (error) {
+    showAuthError(error.code ?? "browser_session_unavailable", error.message);
+    toast(error.message);
+  }
 }
 
 async function runArchiveImport(archivePath) {

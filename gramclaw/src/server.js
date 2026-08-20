@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { launchWebviewLogin } from "./webview-login.js";
 import { ensureDirs } from "./config.js";
 import { getDb } from "./db.js";
 import { findArchives, importArchive } from "./archive.js";
@@ -13,7 +14,7 @@ import {
   startAnalysis,
 } from "./analysis.js";
 import { graphComment, graphPublish, graphSendMessage } from "./graph.js";
-import { authStatus, runWebAction, syncLive, uploadWebPhoto } from "./live.js";
+import { authStatus, connectBrowserSession, INSTAGRAM_LOGIN_URL, runWebAction, syncLive, uploadWebPhoto } from "./live.js";
 import {
   completeInstagramLogin,
   logoutInstagramSession,
@@ -473,11 +474,18 @@ function isLoopback(host) {
 function createAuthContext({ host, options }) {
   const api = options.instagramAuth ?? {
     completeLogin: completeInstagramLogin,
+    connectBrowser: connectBrowserSession,
     logout: logoutInstagramSession,
     startLogin: startInstagramLogin,
     status: authStatus,
     verify: verifyInstagramSession,
   };
+  const openBrowser = options.openUrl ?? (async (url, opts = {}) => {
+    if (opts.app === "GramclawLogin") {
+      return launchWebviewLogin({ url });
+    }
+    openUrl(url, opts);
+  });
   const attempts = new Map();
   const starts = [];
   const attemptTimeoutMs = Number(options.authAttemptTimeoutMs ?? 600_000);
@@ -489,6 +497,7 @@ function createAuthContext({ host, options }) {
     attempts,
     attemptTimeoutMs,
     host,
+    openBrowser,
     rateLimit,
     rateWindowMs,
     starts,
@@ -513,6 +522,65 @@ async function handleAuthApi(request, response, method, segments, context) {
       ok: true,
       ...(status?.direct ? status : { direct: status }),
     });
+    return;
+  }
+  if (method === "POST" && segments[0] === "browser" && segments[1] === "open" && segments.length === 2) {
+    if (!isLoopback(context.host)) {
+      throw authHttpError(403, "remote_login_disabled", "Browser sign-in is available only on the loopback listener.");
+    }
+    await readBodyWithOptions(request, { limit: 1_024, requireJson: true });
+    let launched;
+    try {
+      launched = await context.openBrowser(INSTAGRAM_LOGIN_URL, { app: "GramclawLogin" });
+    } catch (error) {
+      throw authHttpError(
+        400,
+        error?.code === "cancelled" ? "cancelled" : "browser_session_unavailable",
+        error?.code === "cancelled"
+          ? "Sign-in was cancelled."
+          : (error instanceof Error ? error.message : "Could not open the Gramclaw login window."),
+      );
+    }
+    if (launched && typeof launched === "object" && launched.cancelled) {
+      throw authHttpError(400, "cancelled", "Sign-in was cancelled.");
+    }
+    if (launched && typeof launched === "object" && launched.cookies?.length) {
+      try {
+        sendJson(response, 200, {
+          ok: true,
+          url: INSTAGRAM_LOGIN_URL,
+          ...(await context.api.connectBrowser({ cookies: launched.cookies })),
+        });
+        return;
+      } catch (error) {
+        throw authHttpError(
+          400,
+          error?.code === "browser_session_unavailable" ? error.code : "browser_session_unavailable",
+          error?.code === "browser_session_unavailable"
+            ? error.message
+            : "The Gramclaw login window signed in, but Instagram rejected that session when Gramclaw reused it. Archive import remains the reliable path.",
+        );
+      }
+    }
+    sendJson(response, 200, { ok: true, url: INSTAGRAM_LOGIN_URL });
+    return;
+  }
+  if (method === "POST" && segments[0] === "browser" && segments[1] === "connect" && segments.length === 2) {
+    if (!isLoopback(context.host)) {
+      throw authHttpError(403, "remote_login_disabled", "Browser sign-in is available only on the loopback listener.");
+    }
+    await readBodyWithOptions(request, { limit: 1_024, requireJson: true });
+    try {
+      sendJson(response, 200, await context.api.connectBrowser());
+    } catch (error) {
+      throw authHttpError(
+        400,
+        error?.code === "browser_session_unavailable" ? error.code : "browser_session_unavailable",
+        error?.code === "browser_session_unavailable"
+          ? error.message
+          : "No signed-in Instagram browser session was found. Tap Open Instagram, sign in in the Gramclaw login window, then continue.",
+      );
+    }
     return;
   }
   if (method === "POST" && segments[0] === "login" && segments.length === 1) {
@@ -722,9 +790,12 @@ function authHttpError(status, code, safeMessage) {
   return error;
 }
 
-function openUrl(url) {
+function openUrl(url, options = {}) {
+  const preferChrome = options.app === "Google Chrome"
+    && process.platform === "darwin"
+    && existsSync("/Applications/Google Chrome.app");
   const command = process.platform === "darwin"
-    ? ["open", [url]]
+    ? (preferChrome ? ["open", ["-a", "Google Chrome", url]] : ["open", [url]])
     : process.platform === "win32"
       ? ["cmd", ["/c", "start", "", url]]
       : ["xdg-open", [url]];
