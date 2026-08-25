@@ -6,6 +6,7 @@ const state = {
   selected: new Set(),
   filters: {},
   collectionId: null,
+  igCollectionId: null,
   libraryMode: null,
   boardId: null,
   activeBoard: null,
@@ -49,7 +50,7 @@ const els = {
 const viewMeta = {
   home: ["Home", "Personal archive"],
   ask: ["Ask", "Visual search"],
-  library: ["Saved Library", "Organized inspiration"],
+  library: ["Saved", "Everything you've saved, organized inspiration on top"],
   boards: ["Boards", "Arrange ideas"],
   analysis: ["Media analysis", "Private visual index"],
   inbox: ["Inbox", "Priority queue"],
@@ -78,6 +79,7 @@ function urlForState() {
   const query = new URLSearchParams();
   if (state.view === "library") {
     if (state.collectionId) query.set("collection", state.collectionId);
+    if (state.igCollectionId) query.set("igCollection", state.igCollectionId);
     if (state.libraryMode) query.set("mode", state.libraryMode);
   } else if (state.view === "boards" && state.boardId) {
     query.set("board", state.boardId);
@@ -89,6 +91,7 @@ function urlForState() {
 function applyLocationToState(url) {
   state.view = VIEW_BY_PATH[url.pathname] ?? "home";
   state.collectionId = state.view === "library" ? url.searchParams.get("collection") : null;
+  state.igCollectionId = state.view === "library" ? url.searchParams.get("igCollection") : null;
   state.libraryMode = state.view === "library" ? url.searchParams.get("mode") : null;
   state.boardId = state.view === "boards" ? url.searchParams.get("board") : null;
 }
@@ -973,10 +976,14 @@ async function verifyConnection(showInOnboarding) {
 async function setView(view) {
   state.view = view;
   if (view !== "boards") state.boardId = null;
-  if (view !== "library") {
-    state.collectionId = null;
-    state.libraryMode = null;
-  }
+  // Entering a top-level nav view is always a fresh visit: clear any
+  // collection/mode filter left over from a previous Saved session so
+  // Saved lands on "everything" instead of silently re-showing a stale
+  // Unorganized/collection sub-view. Only the in-page Saved actions
+  // (open-collection, review-unorganized, ...) should set these.
+  state.collectionId = null;
+  state.igCollectionId = null;
+  state.libraryMode = null;
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   syncUrl();
   await render();
@@ -1101,40 +1108,57 @@ async function renderLibrary() {
   const duplicatePromise = state.libraryMode === "duplicates" ? api("/api/library/duplicates") : Promise.resolve(null);
   const [overview, savedResult, duplicates] = await Promise.all([
     api("/api/library"),
-    api(`/api/visual-search?saved=1&limit=500${state.collectionId ? `&collectionId=${encodeURIComponent(state.collectionId)}` : ""}${state.libraryMode === "unorganized" ? "&unorganized=1" : ""}`),
+    api(`/api/visual-search?saved=1&limit=500${state.collectionId ? `&collectionId=${encodeURIComponent(state.collectionId)}` : ""}${state.igCollectionId ? `&igCollectionId=${encodeURIComponent(state.igCollectionId)}` : ""}${state.libraryMode === "unorganized" ? "&unorganized=1" : ""}`),
     duplicatePromise,
   ]);
   const active = overview.collections.find((item) => item.id === state.collectionId);
+  const activeIg = (overview.igCollections || []).find((item) => item.id === state.igCollectionId);
+  const scoped = Boolean(active || activeIg || state.libraryMode);
   const modeTitle = state.libraryMode === "unorganized" ? "Unorganized" : state.libraryMode === "duplicates" ? "Duplicate review" : null;
+  const heroTitle = modeTitle || active?.name || activeIg?.name || "Saved";
+  const heroDescription = state.libraryMode === "unorganized"
+    ? "Saved references that have not joined a collection or tag yet."
+    : state.libraryMode === "duplicates"
+      ? "Exact media fingerprints grouped for a quick visual review."
+      : active
+        ? escapeHtml(active.description)
+        : activeIg
+          ? `An Instagram Collection · ${formatNumber(activeIg.syncedItemCount)} of ${formatNumber(activeIg.mediaCount)} items synced`
+          : `Everything you've saved and liked — ${formatNumber(overview.savedCount)} references, all in one place.`;
   els.content.innerHTML = `
     <section class="library-hero">
       <div>
-        <p class="eyebrow">Smart Saved</p>
-        <h2>${escapeHtml(modeTitle || active?.name || `${formatNumber(overview.savedCount)} references, ready to think with.`)}</h2>
-        <p>${state.libraryMode === "unorganized" ? "Saved references that have not joined a collection or tag yet." : state.libraryMode === "duplicates" ? "Exact media fingerprints grouped for a quick visual review." : active ? escapeHtml(active.description) : "Automatic visual topics sit alongside your own collections and tags. Nothing leaves this machine."}</p>
+        <p class="eyebrow">Saved</p>
+        <h2>${escapeHtml(heroTitle)}</h2>
+        <p>${heroDescription}</p>
       </div>
       <div class="library-actions">
-        ${active || state.libraryMode ? '<button class="secondary-button" data-action="all-library">← All collections</button>' : ""}
+        ${scoped ? '<button class="secondary-button" data-action="all-library">← All Saved</button>' : ""}
         <button class="secondary-button" data-action="create-collection">＋ Collection</button>
         <button class="sync-button" data-action="organize">✦ Organize</button>
       </div>
     </section>
-    ${active || state.libraryMode ? "" : `
+    ${scoped ? "" : `
       <div class="library-stats">
         <div><strong>${formatNumber(overview.collections.length)}</strong><span>Collections</span></div>
+        ${overview.igCollections?.length ? `<div><strong>${formatNumber(overview.igCollections.length)}</strong><span>Instagram Collections</span></div>` : ""}
         <div><strong>${formatNumber(overview.tags.length)}</strong><span>Tags</span></div>
         <button data-action="review-unorganized"><strong>${formatNumber(overview.unorganizedCount)}</strong><span>Unorganized →</span></button>
         <button data-action="review-duplicates"><strong>${formatNumber(overview.duplicates)}</strong><span>Duplicate groups →</span></button>
       </div>
+      ${overview.igCollections?.length ? `
+      <div class="section-head"><h2>Instagram Collections</h2><p>Folders synced from your own Instagram account</p></div>
+      <div class="chips ig-collection-chips">${overview.igCollections.map((collection) => `<button class="chip" data-action="open-ig-collection" data-id="${escapeAttr(collection.id)}">${escapeHtml(collection.name || "Untitled")} · ${formatNumber(collection.syncedItemCount)}</button>`).join("")}</div>
+      ` : ""}
       <div class="collection-grid">
         ${overview.collections.filter((item) => item.count > 0 || item.kind === "custom").map(collectionCard).join("") || emptyState("No collections yet", "Analyze your media, then organize the Saved library.")}
       </div>
       ${overview.tags.length ? `<div class="section-head"><h2>Tags</h2></div><div class="chips tag-cloud">${overview.tags.map((tag) => `<span class="tag-chip" style="--tag:${escapeAttr(tag.color)}">${escapeHtml(tag.name)} · ${tag.count}</span>`).join("")}</div>` : ""}
     `}
     ${state.libraryMode === "duplicates" ? duplicateReview(duplicates?.items || []) : `
-    <div class="section-head"><h2>${escapeHtml(modeTitle || active?.name || "All Saved")}</h2><p>Select several items for bulk organization</p></div>
+    <div class="section-head"><h2>${escapeHtml(heroTitle)}</h2><p>Select several items for bulk organization</p></div>
     ${bulkToolbar(overview)}
-    <div class="feed-grid">${savedResult.items.map((post) => postCard(post, { selectable: true })).join("") || emptyState(state.libraryMode === "unorganized" ? "Everything is organized" : "Nothing in this collection", state.libraryMode === "unorganized" ? "Every Saved item belongs to a collection or tag." : "Select Saved posts and add them here.")}</div>`}`;
+    <div class="feed-grid">${savedResult.items.map((post) => postCard(post, { selectable: true })).join("") || emptyState(state.libraryMode === "unorganized" ? "Everything is organized" : "Nothing here yet", state.libraryMode === "unorganized" ? "Every Saved item belongs to a collection or tag." : "Select Saved posts and add them here.")}</div>`}`;
 }
 
 function duplicateReview(groups) {
@@ -1217,7 +1241,7 @@ async function renderBoards() {
       <div class="board-scroll">
         <div class="board-canvas" style="--board-bg:${escapeAttr(board.background)}">
           ${board.items.map(boardItem).join("")}
-          ${board.items.length ? "" : '<div class="board-empty">Select posts in Ask or Library, then add them to this board.</div>'}
+          ${board.items.length ? "" : '<div class="board-empty">Select posts in Ask or Saved, then add them to this board.</div>'}
         </div>
       </div>`;
     return;
@@ -1233,7 +1257,7 @@ async function renderBoards() {
         <button class="board-card" data-action="open-board" data-id="${escapeAttr(board.id)}" style="--board-bg:${escapeAttr(board.background)}">
           <div class="board-mini">${board.cover_media_id ? `<img src="/media/${encodeURIComponent(board.cover_media_id)}" alt="" onerror="this.remove()">` : "<span>▱</span>"}</div>
           <div><strong>${escapeHtml(board.name)}</strong><p>${escapeHtml(board.description || "Untitled direction")}</p><small>${board.item_count} references · ${relativeTime(board.updated_at)}</small></div>
-        </button>`).join("") || emptyState("No boards yet", "Create one, then add visual results from Ask or Library.")}
+        </button>`).join("") || emptyState("No boards yet", "Create one, then add visual results from Ask or Saved.")}
     </div>`;
 }
 
@@ -1399,21 +1423,30 @@ async function handleAction(element) {
     await renderLibrary();
   } else if (action === "open-collection") {
     state.collectionId = element.dataset.id;
+    state.igCollectionId = null;
+    syncUrl();
+    await renderLibrary();
+  } else if (action === "open-ig-collection") {
+    state.igCollectionId = element.dataset.id;
+    state.collectionId = null;
     syncUrl();
     await renderLibrary();
   } else if (action === "all-library") {
     state.collectionId = null;
+    state.igCollectionId = null;
     state.libraryMode = null;
     syncUrl();
     await renderLibrary();
   } else if (action === "review-unorganized") {
     state.libraryMode = "unorganized";
     state.collectionId = null;
+    state.igCollectionId = null;
     syncUrl();
     await renderLibrary();
   } else if (action === "review-duplicates") {
     state.libraryMode = "duplicates";
     state.collectionId = null;
+    state.igCollectionId = null;
     syncUrl();
     await renderLibrary();
   } else if (action === "analyze-local" || action === "analyze-cloud") {
