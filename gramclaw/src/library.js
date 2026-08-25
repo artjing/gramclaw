@@ -1,4 +1,4 @@
-import { defaultAccount } from "./db.js";
+import { defaultAccount, listIgCollections } from "./db.js";
 import {
   colorNames,
   cosineSimilarity,
@@ -51,6 +51,10 @@ export function visualSearch(db, query, options = {}) {
   if (parsed.collectionId) {
     conditions.push("exists(select 1 from library_collection_items lci where lci.post_id=posts.id and lci.collection_id=?)");
     params.push(parsed.collectionId);
+  }
+  if (parsed.igCollectionId) {
+    conditions.push("exists(select 1 from ig_collection_items ici where ici.post_id=posts.id and ici.collection_id=?)");
+    params.push(parsed.igCollectionId);
   }
   if (parsed.unorganized) {
     conditions.push("not exists(select 1 from library_collection_items lci where lci.post_id=posts.id)");
@@ -196,6 +200,7 @@ export function parseVisualQuery(query, options = {}) {
     color: options.color?.toLowerCase() || findColor(lower),
     topic: options.topic || null,
     collectionId: options.collectionId || null,
+    igCollectionId: options.igCollectionId || null,
     unorganized: asOptionalBoolean(options.unorganized) ?? false,
     kind: options.kind ? normalizeKinds(options.kind) : inferKinds(lower),
     semanticText: raw,
@@ -324,8 +329,17 @@ export function getLibraryOverview(db) {
       and not exists(select 1 from library_collection_items where library_collection_items.post_id=collections.post_id)
       and not exists(select 1 from post_tags where post_tags.post_id=collections.post_id)
   `).get(accountId)?.count ?? 0);
+  const igCollections = listIgCollections(db, accountId).map((row) => ({
+    id: row.id,
+    externalId: row.external_id,
+    name: row.name,
+    type: row.type,
+    mediaCount: Number(row.media_count ?? 0),
+    syncedItemCount: Number(row.synced_item_count ?? 0),
+  }));
   return {
     collections,
+    igCollections,
     tags,
     savedCount,
     unorganizedCount,

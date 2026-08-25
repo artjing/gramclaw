@@ -182,6 +182,29 @@ create table if not exists library_collection_items (
 create index if not exists library_collection_items_post_idx
   on library_collection_items(post_id, added_at desc);
 
+create table if not exists ig_collections (
+  id text primary key,
+  account_id text not null,
+  external_id text not null,
+  name text not null,
+  type text not null default 'MEDIA',
+  media_count integer not null default 0,
+  raw_json text not null default '{}',
+  created_at text not null,
+  updated_at text not null,
+  unique(account_id, external_id)
+);
+
+create table if not exists ig_collection_items (
+  collection_id text not null,
+  post_id text not null,
+  added_at text not null,
+  primary key(collection_id, post_id)
+);
+
+create index if not exists ig_collection_items_post_idx
+  on ig_collection_items(post_id, added_at desc);
+
 create table if not exists tags (
   id text primary key,
   account_id text not null,
@@ -715,6 +738,51 @@ export function addCollection(db, input) {
     json(input.raw, {}),
     nowIso(),
   );
+}
+
+export function upsertIgCollection(db, input) {
+  const time = nowIso();
+  const id = stableId("igcollection", input.accountId, input.externalId);
+  db.prepare(`
+    insert into ig_collections(id, account_id, external_id, name, type, media_count, raw_json, created_at, updated_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    on conflict(account_id, external_id) do update set
+      name=excluded.name,
+      type=excluded.type,
+      media_count=excluded.media_count,
+      raw_json=excluded.raw_json,
+      updated_at=excluded.updated_at
+  `).run(
+    id,
+    input.accountId,
+    input.externalId,
+    input.name ?? "",
+    input.type ?? "MEDIA",
+    Number(input.mediaCount ?? 0),
+    json(input.raw, {}),
+    time,
+    time,
+  );
+  return db.prepare("select * from ig_collections where id=?").get(id);
+}
+
+export function addIgCollectionItem(db, input) {
+  db.prepare(`
+    insert into ig_collection_items(collection_id, post_id, added_at)
+    values (?, ?, ?)
+    on conflict(collection_id, post_id) do nothing
+  `).run(input.collectionId, input.postId, input.addedAt ?? nowIso());
+}
+
+export function listIgCollections(db, accountId) {
+  return db.prepare(`
+    select ig_collections.*, count(ig_collection_items.post_id) as synced_item_count
+    from ig_collections
+    left join ig_collection_items on ig_collection_items.collection_id=ig_collections.id
+    where ig_collections.account_id=?
+    group by ig_collections.id
+    order by ig_collections.name collate nocase
+  `).all(accountId);
 }
 
 export function rebuildFts(db) {
