@@ -60,11 +60,63 @@ const viewMeta = {
   insights: ["Insights", "Patterns, not vanity"],
 };
 
+// One real URL per view (path-based, matching Birdclaw's per-page routing).
+// "home" is "/" ; every other view is "/<view>". Library and boards also
+// carry their sub-state (collection/board selection, library mode) as query
+// params so those states are deep-linkable and reload-safe too.
+const PATH_BY_VIEW = {
+  home: "/", ask: "/ask", library: "/library", boards: "/boards",
+  analysis: "/analysis", inbox: "/inbox", liked: "/liked", stories: "/stories",
+  dms: "/dms", network: "/network", insights: "/insights",
+};
+const VIEW_BY_PATH = Object.fromEntries(
+  Object.entries(PATH_BY_VIEW).map(([view, path]) => [path, view]),
+);
+
+function urlForState() {
+  const path = PATH_BY_VIEW[state.view] ?? "/";
+  const query = new URLSearchParams();
+  if (state.view === "library") {
+    if (state.collectionId) query.set("collection", state.collectionId);
+    if (state.libraryMode) query.set("mode", state.libraryMode);
+  } else if (state.view === "boards" && state.boardId) {
+    query.set("board", state.boardId);
+  }
+  const search = query.toString();
+  return search ? `${path}?${search}` : path;
+}
+
+function applyLocationToState(url) {
+  state.view = VIEW_BY_PATH[url.pathname] ?? "home";
+  state.collectionId = state.view === "library" ? url.searchParams.get("collection") : null;
+  state.libraryMode = state.view === "library" ? url.searchParams.get("mode") : null;
+  state.boardId = state.view === "boards" ? url.searchParams.get("board") : null;
+}
+
+// Push/replace the address bar to match current state, then re-render.
+// Call after any state change that should be its own back/forward stop
+// (view switches, opening a collection/board, library mode changes).
+function syncUrl({ push = true } = {}) {
+  const target = urlForState();
+  const current = `${location.pathname}${location.search}`;
+  if (target === current) return;
+  if (push) history.pushState({ view: state.view }, "", target);
+  else history.replaceState({ view: state.view }, "", target);
+}
+
 init();
 
 async function init() {
   applyTheme();
+  applyLocationToState(new URL(location.href));
+  syncUrl({ push: false });
+  document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === state.view));
   bindEvents();
+  window.addEventListener("popstate", async () => {
+    applyLocationToState(new URL(location.href));
+    document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === state.view));
+    await render();
+  });
   await Promise.all([refreshStatus(), refreshAuthStatus()]);
   renderAccountPill();
   if (shouldGateOnboarding()) showOnboarding();
@@ -926,6 +978,7 @@ async function setView(view) {
     state.libraryMode = null;
   }
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === view));
+  syncUrl();
   await render();
 }
 
@@ -1346,18 +1399,22 @@ async function handleAction(element) {
     await renderLibrary();
   } else if (action === "open-collection") {
     state.collectionId = element.dataset.id;
+    syncUrl();
     await renderLibrary();
   } else if (action === "all-library") {
     state.collectionId = null;
     state.libraryMode = null;
+    syncUrl();
     await renderLibrary();
   } else if (action === "review-unorganized") {
     state.libraryMode = "unorganized";
     state.collectionId = null;
+    syncUrl();
     await renderLibrary();
   } else if (action === "review-duplicates") {
     state.libraryMode = "duplicates";
     state.collectionId = null;
+    syncUrl();
     await renderLibrary();
   } else if (action === "analyze-local" || action === "analyze-cloud") {
     const provider = action.endsWith("cloud") ? "cloud" : "local";
@@ -1374,15 +1431,18 @@ async function handleAction(element) {
     const board = await api("/api/boards", { method: "POST", body: JSON.stringify({ name, postIds: [...state.selected] }) });
     state.selected.clear();
     state.boardId = board.id;
+    syncUrl();
     await refreshStatus();
     await renderBoards();
   } else if (action === "open-board") {
     state.boardId = element.dataset.id;
+    syncUrl();
     await renderBoards();
   } else if (action === "boards-list") {
     state.boardId = null;
     state.activeBoard = null;
     els.title.textContent = viewMeta.boards[0];
+    syncUrl();
     await renderBoards();
   } else if (action === "remove-board-item") {
     await api(`/api/boards/${encodeURIComponent(state.boardId)}/items/${encodeURIComponent(element.dataset.id)}`, { method: "DELETE", body: "{}" });
