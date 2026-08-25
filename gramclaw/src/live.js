@@ -556,7 +556,10 @@ async function fetchWebFeed(stream, account, options) {
         ...(maxId ? { max_id: maxId } : {}),
       },
     });
-    const pageItems = payload.items ?? payload.feed_items?.map((item) => item.media_or_ad).filter(Boolean) ?? [];
+    let pageItems = payload.items ?? payload.feed_items?.map((item) => item.media_or_ad).filter(Boolean) ?? [];
+    if (stream === "saved") {
+      pageItems = pageItems.map((item) => item.media ?? item).filter(Boolean);
+    }
     items.push(...pageItems);
     maxId = payload.next_max_id ?? payload.next_max_id?.toString() ?? null;
     if (!payload.more_available || !maxId || pageItems.length === 0) break;
