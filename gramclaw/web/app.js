@@ -1150,9 +1150,10 @@ async function renderLibrary() {
       <div class="section-head"><h2>Instagram Collections</h2><p>Folders synced from your own Instagram account</p></div>
       <div class="chips ig-collection-chips">${overview.igCollections.map((collection) => `<button class="chip" data-action="open-ig-collection" data-id="${escapeAttr(collection.id)}">${escapeHtml(collection.name || "Untitled")} · ${formatNumber(collection.syncedItemCount)}</button>`).join("")}</div>
       ` : ""}
-      <div class="collection-grid">
-        ${overview.collections.filter((item) => item.count > 0 || item.kind === "custom").map(collectionCard).join("") || emptyState("No collections yet", "Analyze your media, then organize the Saved library.")}
-      </div>
+      ${(() => {
+        const cards = overview.collections.filter((item) => item.count > 0 || item.kind === "custom").map(collectionCard).join("");
+        return cards ? `<div class="collection-grid">${cards}</div>` : "";
+      })()}
       ${overview.tags.length ? `<div class="section-head"><h2>Tags</h2></div><div class="chips tag-cloud">${overview.tags.map((tag) => `<span class="tag-chip" style="--tag:${escapeAttr(tag.color)}">${escapeHtml(tag.name)} · ${tag.count}</span>`).join("")}</div>` : ""}
     `}
     ${state.libraryMode === "duplicates" ? duplicateReview(duplicates?.items || []) : `
