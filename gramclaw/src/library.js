@@ -1,4 +1,4 @@
-import { defaultAccount } from "./db.js";
+import { defaultAccount, listIgCollections } from "./db.js";
 import {
   colorNames,
   cosineSimilarity,
@@ -29,7 +29,7 @@ export function visualSearch(db, query, options = {}) {
   const account = defaultAccount(db);
   const parsed = parseVisualQuery(query, options);
   const conditions = ["posts.deleted_at is null"];
-  const params = [account?.id ?? "", account?.id ?? ""];
+  const params = [account?.id ?? "", account?.id ?? "", account?.id ?? "", account?.id ?? ""];
   if (parsed.saved) conditions.push("exists(select 1 from collections c where c.post_id=posts.id and c.kind='saved')");
   if (parsed.liked) conditions.push("exists(select 1 from collections c where c.post_id=posts.id and c.kind='liked')");
   if (parsed.since) {
@@ -52,6 +52,10 @@ export function visualSearch(db, query, options = {}) {
     conditions.push("exists(select 1 from library_collection_items lci where lci.post_id=posts.id and lci.collection_id=?)");
     params.push(parsed.collectionId);
   }
+  if (parsed.igCollectionId) {
+    conditions.push("exists(select 1 from ig_collection_items ici where ici.post_id=posts.id and ici.collection_id=?)");
+    params.push(parsed.igCollectionId);
+  }
   if (parsed.unorganized) {
     conditions.push("not exists(select 1 from library_collection_items lci where lci.post_id=posts.id)");
     conditions.push("not exists(select 1 from post_tags where post_tags.post_id=posts.id)");
@@ -64,6 +68,8 @@ export function visualSearch(db, query, options = {}) {
       profiles.avatar_url as author_avatar_url,
       exists(select 1 from collections c where c.account_id=? and c.post_id=posts.id and c.kind='liked') as liked,
       exists(select 1 from collections c where c.account_id=? and c.post_id=posts.id and c.kind='saved') as saved,
+      (select c.collected_at from collections c where c.account_id=? and c.post_id=posts.id and c.kind='saved') as saved_collected_at,
+      (select c.collected_at from collections c where c.account_id=? and c.post_id=posts.id and c.kind='liked') as liked_collected_at,
       media.id as media_id,
       media.media_type,
       media.local_path,
@@ -168,9 +174,12 @@ export function visualSearch(db, query, options = {}) {
       },
       score: Math.round(score),
       why: unique(why).slice(0, 4),
+      collectedAt: (parsed.saved ? row.saved_collected_at : parsed.liked ? row.liked_collected_at : null)
+        ?? row.saved_collected_at ?? row.liked_collected_at ?? null,
     });
   }
-  results.sort((left, right) => right.score - left.score || String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")));
+  results.sort((left, right) => right.score - left.score
+    || String(right.collectedAt ?? right.created_at ?? "").localeCompare(String(left.collectedAt ?? left.created_at ?? "")));
   return {
     q: query,
     interpretedAs: parsed,
@@ -191,6 +200,7 @@ export function parseVisualQuery(query, options = {}) {
     color: options.color?.toLowerCase() || findColor(lower),
     topic: options.topic || null,
     collectionId: options.collectionId || null,
+    igCollectionId: options.igCollectionId || null,
     unorganized: asOptionalBoolean(options.unorganized) ?? false,
     kind: options.kind ? normalizeKinds(options.kind) : inferKinds(lower),
     semanticText: raw,
@@ -319,8 +329,17 @@ export function getLibraryOverview(db) {
       and not exists(select 1 from library_collection_items where library_collection_items.post_id=collections.post_id)
       and not exists(select 1 from post_tags where post_tags.post_id=collections.post_id)
   `).get(accountId)?.count ?? 0);
+  const igCollections = listIgCollections(db, accountId).map((row) => ({
+    id: row.id,
+    externalId: row.external_id,
+    name: row.name,
+    type: row.type,
+    mediaCount: Number(row.media_count ?? 0),
+    syncedItemCount: Number(row.synced_item_count ?? 0),
+  }));
   return {
     collections,
+    igCollections,
     tags,
     savedCount,
     unorganizedCount,

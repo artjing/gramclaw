@@ -189,7 +189,7 @@ export async function runCli(argv) {
     .option("--max-pages <count>", "Maximum pages", positiveInteger, 5)
     .option("--cursor <cursor>", "Resume cursor")
     .action(async (stream, options, command) => {
-      const allowed = ["profile", "posts", "timeline", "saved", "liked", "comments", "dms", "followers", "following"];
+      const allowed = ["profile", "posts", "timeline", "saved", "liked", "ig-collections", "comments", "dms", "followers", "following"];
       if (!allowed.includes(stream)) throw new InvalidArgumentError(`stream must be one of: ${allowed.join(", ")}`);
       output(command, await syncLive(stream, { ...globals(command), ...options }));
     });

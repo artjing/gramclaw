@@ -222,6 +222,7 @@ async function handleApi(request, response, url, context) {
       topic: url.searchParams.get("topic") || undefined,
       kind: url.searchParams.get("kind") || undefined,
       collectionId: url.searchParams.get("collectionId") || undefined,
+      igCollectionId: url.searchParams.get("igCollectionId") || undefined,
       unorganized: url.searchParams.get("unorganized") || undefined,
       limit: url.searchParams.get("limit") || undefined,
     }));

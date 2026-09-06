@@ -6,6 +6,7 @@ import { imageSize } from "image-size";
 import { loadBrowserCookies } from "./browser-cookies.js";
 import {
   addCollection,
+  addIgCollectionItem,
   defaultAccount,
   ensureAccount,
   getDb,
@@ -13,6 +14,7 @@ import {
   rebuildFts,
   recordFollowSnapshot,
   upsertComment,
+  upsertIgCollection,
   upsertMedia,
   upsertPost,
   upsertProfile,
@@ -478,6 +480,38 @@ async function syncWeb(stream, options = {}) {
           counts[stream] = (counts[stream] ?? 0) + 1;
         }
       }
+    } else if (stream === "ig-collections") {
+      const collectionList = await fetchIgCollectionList({ ...options, credentials });
+      counts.igCollections = 0;
+      counts.posts = 0;
+      counts.media = 0;
+      counts.igCollectionItems = 0;
+      const withItems = options.withItems === undefined || options.withItems === "" || Boolean(options.withItems);
+      for (const entry of collectionList) {
+        const collection = upsertIgCollection(db, {
+          accountId: account.id,
+          externalId: entry.externalId,
+          name: entry.name,
+          type: entry.type,
+          mediaCount: entry.mediaCount,
+          raw: entry.raw,
+        });
+        counts.igCollections += 1;
+        if (!withItems) continue;
+        const items = await fetchIgCollectionMedia(entry.externalId, {
+          ...options,
+          credentials,
+          limit: options.itemLimit ?? 200,
+        });
+        for (const item of items) {
+          const post = normalizeWebPost(item, account);
+          mergeNormalizedPost(db, post);
+          counts.posts += 1;
+          counts.media += post.media.length;
+          addIgCollectionItem(db, { collectionId: collection.id, postId: post.id });
+          counts.igCollectionItems += 1;
+        }
+      }
     } else if (stream === "followers" || stream === "following") {
       const relation = await fetchRelationships(stream, account, { ...options, credentials });
       const ids = relation.items.map((user) => upsertProfile(db, normalizeWebProfile(user)).id);
@@ -556,10 +590,64 @@ async function fetchWebFeed(stream, account, options) {
         ...(maxId ? { max_id: maxId } : {}),
       },
     });
-    const pageItems = payload.items ?? payload.feed_items?.map((item) => item.media_or_ad).filter(Boolean) ?? [];
+    let pageItems = payload.items ?? payload.feed_items?.map((item) => item.media_or_ad).filter(Boolean) ?? [];
+    if (stream === "saved") {
+      pageItems = pageItems.map((item) => item.media ?? item).filter(Boolean);
+    }
     items.push(...pageItems);
     maxId = payload.next_max_id ?? payload.next_max_id?.toString() ?? null;
     if (!payload.more_available || !maxId || pageItems.length === 0) break;
+  }
+  return items.slice(0, limit);
+}
+
+async function fetchIgCollectionList(options) {
+  const collections = [];
+  let maxId = "";
+  const maxPages = Number(options.maxPages ?? 20);
+  for (let page = 0; page < maxPages; page += 1) {
+    const payload = await webRequest("/api/v1/collections/list/", {
+      ...options,
+      query: {
+        collection_types: JSON.stringify(["ALL_MEDIA_AUTO_COLLECTION", "PRODUCT_AUTO_COLLECTION", "MEDIA"]),
+        max_id: maxId,
+      },
+    });
+    const pageItems = payload.items ?? [];
+    for (const item of pageItems) {
+      collections.push({
+        externalId: String(item.collection_id ?? item.id ?? ""),
+        name: item.collection_name ?? item.name ?? "",
+        type: item.collection_type ?? item.type ?? "MEDIA",
+        mediaCount: Number(item.collection_media_count ?? item.media_count ?? 0),
+        raw: item,
+      });
+    }
+    if (!payload.more_available) break;
+    maxId = payload.next_max_id ?? payload.max_id ?? "";
+    if (!maxId || pageItems.length === 0) break;
+  }
+  return collections.filter((collection) => collection.externalId);
+}
+
+async function fetchIgCollectionMedia(collectionExternalId, options) {
+  const endpoint = `/api/v1/feed/collection/${collectionExternalId}/`;
+  const limit = Number(options.limit ?? 200);
+  const maxPages = Number(options.maxPages ?? 10);
+  const items = [];
+  let maxId = "";
+  for (let page = 0; page < maxPages && items.length < limit; page += 1) {
+    const payload = await webRequest(endpoint, {
+      ...options,
+      query: {
+        include_igtv_preview: "false",
+        ...(maxId ? { max_id: maxId } : {}),
+      },
+    });
+    const pageItems = (payload.items ?? []).map((item) => item.media ?? item).filter(Boolean);
+    items.push(...pageItems);
+    maxId = payload.next_max_id ?? payload.max_id ?? "";
+    if (!maxId || pageItems.length === 0) break;
   }
   return items.slice(0, limit);
 }
