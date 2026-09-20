@@ -536,10 +536,10 @@ async function handleAuthApi(request, response, method, segments, context) {
     } catch (error) {
       throw authHttpError(
         400,
-        error?.code === "cancelled" ? "cancelled" : "browser_session_unavailable",
+        error?.code === "cancelled" ? "cancelled" : "login_window_unavailable",
         error?.code === "cancelled"
           ? "Sign-in was cancelled."
-          : (error instanceof Error ? error.message : "Could not open the Gramclaw login window."),
+          : "Could not prepare the Gramclaw login window. Check that Xcode Command Line Tools are installed, then try again.",
       );
     }
     if (launched && typeof launched === "object" && launched.cancelled) {

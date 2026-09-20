@@ -15,9 +15,11 @@ const EXPORT_TIMEOUT_MS = 12_000;
 let compilePromise;
 
 export function webviewLoginPaths() {
+  const paths = ensureDirs();
   return {
-    binary: join(ensureDirs().rootDir, "macos-login"),
+    binary: join(paths.rootDir, "macos-login"),
     storeDir: join(getPaths().runtimeDir, "webview-login"),
+    moduleCacheDir: join(paths.runtimeDir, "swift-module-cache"),
     source: SOURCE,
   };
 }
@@ -141,7 +143,10 @@ export async function macosLoginBinary() {
   ) {
     return paths.binary;
   }
+  mkdirSync(paths.moduleCacheDir, { recursive: true, mode: 0o700 });
   compilePromise ??= execFileAsync("swiftc", [
+    "-module-cache-path",
+    paths.moduleCacheDir,
     paths.source,
     "-O",
     "-o",

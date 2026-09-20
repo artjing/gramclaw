@@ -537,6 +537,7 @@ function authErrorCopy(code, fallback) {
     throttled: ["Stop here and let the account cool down.", "Instagram asked Gramclaw to wait. Do not retry repeatedly."],
     runtime_unavailable: ["Python 3.10+ is needed for direct sign-in.", "Install Python, then try again — or import an archive / use a signed-in browser."],
     keyring_unavailable: ["A secure credential store is unavailable.", "Fix your OS keychain, or use an archive / signed-in browser instead."],
+    login_window_unavailable: ["The Instagram login window could not open.", "Check that Xcode Command Line Tools are installed, then try again. Your archive and local library are unaffected."],
     web_cookie_bridge_unavailable: ["Signed in, but live sync is not ready yet.", "Tap try again to re-check. No password needed."],
     browser_session_unavailable: ["Sign in at instagram.com first.", fallback || "Open the Gramclaw login window, finish any code or approval there, then continue."],
     manual_verification_required: ["Finish this checkpoint in Instagram.", "Use the official app or website, then reconnect."],
