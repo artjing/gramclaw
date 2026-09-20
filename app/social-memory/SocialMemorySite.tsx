@@ -25,6 +25,7 @@ const sources = [
   "Threads",
   "Reddit",
   "Are.na",
+  "Web",
   "Your files",
 ];
 
@@ -44,7 +45,7 @@ const outcomes = [
   {
     number: "01",
     title: "Find what you remember, not where it was",
-    body: "Ask in ordinary language. Social Memory searches meaning, images, spoken words, captions, creators, and time across every connected archive.",
+    body: "Ask in ordinary language. Trace Garden searches meaning, images, spoken words, captions, creators, and time across every connected archive.",
     example: '“That translucent chair I saved before my Tokyo trip.”',
     icon: Search,
   },
@@ -71,21 +72,21 @@ export function SocialMemorySite() {
     <main className="memory-site">
       <header className="memory-nav">
         <span className="memory-nav-label">PRIVATE MEMORY / PRODUCT CONCEPT</span>
-        <a href="#top" className="memory-wordmark"><span>ml</span> Memory Layer <em>working concept</em></a>
+        <a href="#top" className="memory-wordmark"><span>tg</span> Trace Garden <em>social memory</em></a>
         <a href="#product" className="memory-nav-cta">Explore the product <ArrowRight size={14} /></a>
       </header>
 
       <section className="memory-hero" id="top">
-        <div className="memory-eyebrow"><CircleDot size={12} /> A private search engine for your own history</div>
-        <h1>Find what you remember.<br /><i>Use it again.</i></h1>
-        <p>Bring in the posts and videos you chose to keep. Search across platforms in ordinary language, see why each result matched, and turn your memories into new work.</p>
+        <div className="memory-eyebrow"><CircleDot size={12} /> A private social memory layer</div>
+        <h1>Your life across the internet,<br /><i>remembered.</i></h1>
+        <p>Bring years of saved posts, watched videos, likes, follows, notes, and archives into one private memory layer. Search what you remember, understand what shaped your taste, and turn it into new creative work.</p>
         <div className="memory-source-row" aria-label="Planned sources">
           {sources.map((source) => <span key={source}>{source}</span>)}
         </div>
 
         <div className="memory-workspace" id="product">
           <aside>
-            <div className="memory-logo"><span>ml</span><strong>Memory Layer</strong></div>
+            <div className="memory-logo"><span>tg</span><strong>Trace Garden</strong></div>
             <nav>
               <a className="active"><BrainCircuit size={15} /> Recall</a>
               <a><Sparkles size={15} /> Taste map</a>
@@ -100,7 +101,7 @@ export function SocialMemorySite() {
             <div className="memory-answer">
               <p>I found three likely matches. The strongest result combines <b>translucent material, a chair silhouette, and items saved before your May 2024 Tokyo trip.</b></p>
               <div className="memory-cards">
-                {memories.map((memory) => <article className={memory.color} key={memory.title}><div /><span>{memory.reason}</span><strong>{memory.title}</strong><small>{memory.note}</small></article>)}
+                {memories.map((memory, index) => <article className={memory.color} key={memory.title}><div className={`memory-photo memory-photo-${index}`} role="img" aria-label={`${memory.title} visual references`} /><span>{memory.reason}</span><strong>{memory.title}</strong><small>{memory.note}</small></article>)}
               </div>
               <div className="memory-next"><span>Turn this into</span><button>Moodboard</button><button>Creative brief</button><button>Reference list</button></div>
             </div>
@@ -135,7 +136,7 @@ export function SocialMemorySite() {
       <section className="memory-outcomes">
         <header><span>WHAT IT DOES</span><h2>From scattered saves<br />to finished work.</h2><p>The first product focuses on three jobs people already struggle to do.</p></header>
         <div>
-          {outcomes.map(({ number, title, body, example, icon: Icon }) => <article key={number}><span>{number}</span><Icon size={25} /><h3>{title}</h3><p>{body}</p><blockquote>{example}</blockquote></article>)}
+          {outcomes.map(({ number, title, body, example, icon: Icon }, index) => <article key={number}><span>{number}</span><div className={`outcome-photo outcome-photo-${index}`} role="img" aria-label={`${title} editorial example`} /><Icon size={25} /><h3>{title}</h3><p>{body}</p><blockquote>{example}</blockquote></article>)}
         </div>
       </section>
 
@@ -181,7 +182,7 @@ export function SocialMemorySite() {
         </div>
       </section>
 
-      <footer className="memory-footer"><span>Memory Layer</span><p>Working concept · name, interface, and scope are still being designed.</p><a href="#top">Back to top ↑</a></footer>
+      <footer className="memory-footer"><span>Trace Garden</span><p>Social memory for creators · Product concept</p><a href="#top">Back to top ↑</a></footer>
     </main>
   );
 }

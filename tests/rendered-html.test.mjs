@@ -58,10 +58,11 @@ test("ships metadata and installable release artifacts", async () => {
   assert.equal(favicon, undefined);
 });
 
-test("server-renders the Social Memory concept page", async () => {
+test("server-renders the Trace Garden concept page", async () => {
   const response = await render("/memory");
   assert.equal(response.status, 200);
   const html = await response.text();
+  assert.match(html, /Trace Garden/);
   assert.match(html, /Your life across the internet/);
   assert.match(html, /Find what you remember/);
   assert.match(html, /Private by default/);

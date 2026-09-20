@@ -2976,7 +2976,7 @@ a {
   }
 }
 
-/* Social Memory concept */
+/* Trace Garden — social memory for creators */
 .memory-site { min-width: 320px; overflow: hidden; background: #10110e; color: #f4f2e9; }
 .memory-nav { position: fixed; z-index: 80; top: 18px; left: 50%; width: min(calc(100% - 32px), 1240px); height: 58px; transform: translateX(-50%); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 14px; border: 1px solid #34352e; border-radius: 18px; background: rgba(19,20,16,.86); backdrop-filter: blur(18px); }
 .memory-back,.memory-nav-cta,.memory-wordmark { display: flex; align-items: center; gap: 8px; font-size: 13px; }
@@ -3011,9 +3011,14 @@ a {
 .memory-cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
 .memory-cards article { padding: 10px 10px 15px; border: 1px solid #3b3c33; border-radius: 14px; background: #1e1f1a; }
 .memory-cards article>div { height: 150px; margin-bottom: 14px; border-radius: 9px; }
-.memory-cards .lime>div { background: radial-gradient(circle at 28% 32%,#efffa6,transparent 20%),linear-gradient(145deg,#313e2c,#88994f); }
-.memory-cards .violet>div { background: radial-gradient(circle at 70% 28%,#b7a9ff,transparent 22%),linear-gradient(145deg,#312d4a,#7d67de); }
-.memory-cards .coral>div { background: radial-gradient(circle at 35% 68%,#ffc0a7,transparent 22%),linear-gradient(145deg,#583630,#ee755f); }
+.memory-photo { position:relative; overflow:hidden; isolation:isolate; background-image:url('/trace-garden/memory-clusters.png'); background-repeat:no-repeat; background-size:300% 100%; box-shadow:inset 0 0 0 1px rgba(255,255,255,.13); }
+.memory-photo::after { content:""; position:absolute; inset:0; z-index:1; mix-blend-mode:color; opacity:.24; }
+.memory-photo-0 { background-position:left center; }
+.memory-photo-1 { background-position:center center; }
+.memory-photo-2 { background-position:right center; }
+.memory-cards .lime .memory-photo::after { background:#d8f65b; }
+.memory-cards .violet .memory-photo::after { background:#8872ff; opacity:.3; }
+.memory-cards .coral .memory-photo::after { background:#ff765e; opacity:.28; }
 .memory-cards article span { display:block; color:#77796f; font:600 8px/1 var(--font-geist-mono),monospace; letter-spacing:.08em; }
 .memory-cards article strong { display:block; margin-top:8px; font-size:13px; }
 .memory-cards article small { display:block; margin-top:5px; color:#8f9186; font-size:9px; }
@@ -3042,9 +3047,14 @@ a {
 .memory-outcomes h2 { margin:0; font-size:clamp(44px,6vw,74px); line-height:.95; letter-spacing:-.06em; }
 .memory-outcomes header p { margin:0; color:#96988d; line-height:1.6; }
 .memory-outcomes>div { display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid #3a3b33; border-bottom:1px solid #3a3b33; }
-.memory-outcomes article { min-height:430px; padding:28px; border-right:1px solid #3a3b33; }
+.memory-outcomes article { min-height:570px; padding:28px; border-right:1px solid #3a3b33; }
 .memory-outcomes article:last-child { border-right:0; }
-.memory-outcomes article>span { display:block; margin-bottom:80px; color:#77796e; font:700 10px var(--font-geist-mono),monospace; }
+.memory-outcomes article>span { display:block; margin-bottom:22px; color:#77796e; font:700 10px var(--font-geist-mono),monospace; }
+.outcome-photo { position:relative; height:185px; margin:0 0 28px; overflow:hidden; border:1px solid #34362e; border-radius:14px; isolation:isolate; background-image:url('/trace-garden/outcomes.png'); background-repeat:no-repeat; background-size:300% 100%; filter:saturate(.88) contrast(1.03); }
+.outcome-photo::after { content:""; position:absolute; inset:0; background:linear-gradient(145deg,rgba(216,246,91,.08),rgba(136,114,255,.18)); mix-blend-mode:color; }
+.outcome-photo-0 { background-position:left center; }
+.outcome-photo-1 { background-position:center center; }
+.outcome-photo-2 { background-position:right center; }
 .memory-outcomes article svg { color:#d8f65b; }
 .memory-outcomes h3 { max-width:300px; margin:22px 0 12px; font-size:25px; line-height:1.05; letter-spacing:-.035em; }
 .memory-outcomes article p { color:#96988d; font-size:13px; line-height:1.6; }
@@ -3075,7 +3085,7 @@ a {
   .memory-nav { grid-template-columns:1fr 1fr; }.memory-wordmark { display:none; }.memory-nav-cta { justify-self:end; }
   .memory-hero { width:min(calc(100% - 28px),1240px); padding-top:130px; }.memory-hero>h1 { font-size:55px; }.memory-hero>p { font-size:16px; }
   .memory-workspace { grid-template-columns:1fr; }.memory-workspace>aside { display:none; }.memory-canvas { padding:25px 18px; overflow:hidden; }.memory-cards { grid-template-columns:1fr; }.memory-cards article>div { height:130px; }
-  .memory-promise { padding:85px 20px; }.memory-outcomes { width:calc(100% - 28px); padding:90px 0; }.memory-outcomes>header { grid-template-columns:1fr; gap:22px; }.memory-outcomes>div { grid-template-columns:1fr; }.memory-outcomes article { min-height:auto; border-right:0; border-bottom:1px solid #3a3b33; }.memory-outcomes article>span { margin-bottom:40px; }
+  .memory-promise { padding:85px 20px; }.memory-outcomes { width:calc(100% - 28px); padding:90px 0; }.memory-outcomes>header { grid-template-columns:1fr; gap:22px; }.memory-outcomes>div { grid-template-columns:1fr; }.memory-outcomes article { min-height:auto; border-right:0; border-bottom:1px solid #3a3b33; }.memory-outcomes article>span { margin-bottom:22px; }.outcome-photo { height:220px; }
   .memory-how { width:calc(100% - 28px); padding:85px 0; }.memory-how>header,.memory-connect-panel,.memory-project { grid-template-columns:1fr; gap:25px; }.memory-how-grid { grid-template-columns:1fr; }.memory-how-grid article { min-height:auto; border-right:0; border-bottom:1px solid #3a3b33; }.memory-how-grid h3 { margin-top:38px; }.memory-connect-panel { padding:24px; }.memory-project { width:calc(100% - 28px); }.memory-project-output { grid-template-columns:1fr; }.memory-agent-steps { grid-template-columns:1fr 1fr; }.memory-boundary { grid-template-columns:1fr; width:calc(100% - 28px); }.memory-boundary>div+div { border-left:0; border-top:1px solid #3a3b33; }
   .memory-architecture { grid-template-columns:1fr; gap:35px; width:calc(100% - 28px); }.memory-architecture h2 { font-size:42px; }.memory-architecture li { grid-template-columns:35px 90px 1fr; }
   .memory-case { grid-template-columns:1fr; width:calc(100% - 28px); padding:25px; gap:28px; }.memory-case-kicker { display:none; }.memory-case-copy h2 { font-size:36px; }
