@@ -387,6 +387,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .auth-manual-mark, .auth-error-mark { width: 62px; height: 62px; display: grid; place-items: center; margin-bottom: 26px; border: 2px solid #171811; border-radius: 20px; background: #7fc9ff; box-shadow: 5px 6px 0 #171811; font-size: 24px; font-weight: 900; transform: rotate(-6deg); }
 .auth-error-mark { background: #ff725e; color: #fff; }
 .auth-success-profile { width: max-content; position: relative; margin: 0 auto 25px; }
+.auth-import-report { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 18px 0; }
+.auth-import-report div { padding: 12px; border: 1px solid #d6d4ca; border-radius: 12px; background: #fff; }
+.auth-import-report div.needs-attention { border-color: #f1a291; background: #fff4ef; }
+.auth-import-report strong, .auth-import-report span { display: block; }
+.auth-import-report strong { color: #171811; font: 800 19px/1 ui-monospace, monospace; }
+.auth-import-report span { margin-top: 5px; color: #77786f; font-size: 9px; }
+.auth-coverage-note { margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; background: #fff4d6; color: #5f5640; font-size: 10px; line-height: 1.5; }
+.auth-import-warnings { margin: 0 0 16px; color: #66675d; font-size: 10px; }
+.auth-import-warnings summary { cursor: pointer; font-weight: 750; }
+.auth-import-warnings ul { max-height: 110px; margin: 8px 0 0; padding-left: 18px; overflow: auto; line-height: 1.45; }
 .auth-success-profile .avatar { width: 84px; height: 84px; border: 3px solid #171811; font-size: 22px; box-shadow: 7px 8px 0 #8267f5; }
 .auth-success-profile > i { position: absolute; right: -8px; bottom: -5px; width: 30px; height: 30px; display: grid; place-items: center; border: 2px solid #171811; border-radius: 50%; background: #e8ff74; font-style: normal; font-weight: 900; }
 

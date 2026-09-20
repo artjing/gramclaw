@@ -119,6 +119,12 @@ test("Instagram JSON export imports posts, saves, follows, and DMs idempotently"
     assert.equal(first.counts.likes, 1);
     assert.equal(first.counts.saved, 1);
     assert.equal(first.counts.directMessages, 1);
+    assert.equal(first.report.format, "json");
+    assert.equal(first.report.recordsImported, 6);
+    assert.equal(first.report.mediaReferences, 1);
+    assert.equal(first.report.mediaFilesAvailable, 0);
+    assert.equal(first.report.mediaFilesMissing, 1);
+    assert.deepEqual(first.report.metadataOnly, { saved: 1, likes: 1 });
     const second = await importArchive(archive);
     assert.equal(second.ok, true);
     const status = getStatus(getDb());

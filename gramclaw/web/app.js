@@ -361,11 +361,20 @@ function authStateCard(ui) {
   }
   if (ui.state === "import_done") {
     const counts = ui.importResult?.counts ?? {};
+    const report = ui.importResult?.report ?? {};
     const summary = [
       counts.posts && `${formatNumber(counts.posts)} posts`,
+      counts.stories && `${formatNumber(counts.stories)} stories`,
+      counts.saved && `${formatNumber(counts.saved)} saved records`,
+      counts.likes && `${formatNumber(counts.likes)} liked records`,
       counts.directMessages && `${formatNumber(counts.directMessages)} DMs`,
       counts.followers && `${formatNumber(counts.followers)} followers`,
     ].filter(Boolean).join(" · ") || "Library updated";
+    const mediaTotal = Number(report.mediaReferences ?? 0);
+    const mediaAvailable = Number(report.mediaFilesAvailable ?? 0);
+    const mediaMissing = Number(report.mediaFilesMissing ?? 0);
+    const metadataOnly = Number(report.metadataOnly?.saved ?? 0) + Number(report.metadataOnly?.likes ?? 0);
+    const warnings = Array.isArray(report.warnings) ? report.warnings : [];
     return `
       <div class="auth-success-profile">
         <span class="auth-archive-mark" aria-hidden="true">ZIP</span>
@@ -376,6 +385,16 @@ function authStateCard(ui) {
         <h2 tabindex="-1">Your library is ready</h2>
         <p>${escapeHtml(summary)}. Live sync stays optional for small updates later.</p>
       </div>
+      <div class="auth-import-report" aria-label="Import report">
+        <div><strong>${formatNumber(report.recordsImported ?? 0)}</strong><span>records imported</span></div>
+        <div><strong>${formatNumber(mediaAvailable)}${mediaTotal ? ` / ${formatNumber(mediaTotal)}` : ""}</strong><span>media files found</span></div>
+        <div class="${mediaMissing ? "needs-attention" : ""}"><strong>${formatNumber(mediaMissing)}</strong><span>media files missing</span></div>
+        <div><strong>${formatNumber(metadataOnly)}</strong><span>Saved/Liked links</span></div>
+      </div>
+      ${mediaMissing || metadataOnly ? `
+        <p class="auth-coverage-note"><strong>Your archive is usable.</strong> ${mediaMissing ? `${formatNumber(mediaMissing)} referenced media file${mediaMissing === 1 ? " is" : "s are"} not present in the export. ` : ""}${metadataOnly ? `${formatNumber(metadataOnly)} Saved/Liked item${metadataOnly === 1 ? " is" : "s are"} link-only metadata from Instagram.` : ""}</p>
+      ` : ""}
+      ${warnings.length ? `<details class="auth-import-warnings"><summary>${formatNumber(warnings.length)} import warning${warnings.length === 1 ? "" : "s"}</summary><ul>${warnings.slice(0, 8).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul></details>` : ""}
       <button type="button" class="auth-primary" data-auth-action="open-workspace">Open workspace <span>↗</span></button>
       <button type="button" class="auth-secondary-wide" data-auth-action="show-login">Enable update sync (optional)</button>`;
   }
@@ -750,7 +769,8 @@ async function runArchiveImport(archivePath) {
       method: "POST",
       body: JSON.stringify({ path }),
     });
-    const imported = Object.values(result.counts ?? {}).reduce((sum, value) => sum + Number(value || 0), 0);
+    const imported = Number(result.report?.recordsImported
+      ?? Object.values(result.counts ?? {}).reduce((sum, value) => sum + Number(value || 0), 0));
     if (!imported) {
       throw Object.assign(new Error("No Instagram data was found in that archive."), { code: "empty_archive" });
     }

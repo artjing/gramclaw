@@ -121,6 +121,7 @@ export async function importArchive(archivePath, options = {}) {
       rootDir: resolved.rootDir,
       sourcePath,
     });
+    const report = buildImportReport(analysis, resolved.rootDir, selected, counts);
     const imported = Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0);
     if (imported === 0) {
       throw new Error(
@@ -138,6 +139,7 @@ export async function importArchive(archivePath, options = {}) {
       selected,
       restore: Boolean(options.restore),
       counts,
+      report,
       filesScanned: analysis.filesScanned,
       warnings: analysis.warnings,
     };
@@ -149,6 +151,38 @@ export async function importArchive(archivePath, options = {}) {
   } finally {
     cleanup?.();
   }
+}
+
+function buildImportReport(analysis, rootDir, selected, counts) {
+  const media = [
+    ...analysis.posts.flatMap((post) => post.media ?? []),
+    ...analysis.stories.flatMap((post) => post.media ?? []),
+    ...analysis.threads.flatMap((thread) =>
+      (thread.messages ?? []).flatMap((message) => message.media ?? [])),
+  ];
+  const mediaFilesAvailable = media.filter((item) => archiveMediaExists(item.uri, rootDir)).length;
+  const mediaFilesMissing = media.length - mediaFilesAvailable;
+  const recordKeys = ["posts", "stories", "comments", "likes", "saved", "directMessages", "followers", "following"];
+  const recordsImported = recordKeys.reduce((sum, key) => sum + Number(counts[key] || 0), 0);
+  return {
+    format: analysis.format,
+    filesScanned: analysis.filesScanned,
+    recordsImported,
+    mediaReferences: media.length,
+    mediaFilesAvailable,
+    mediaFilesMissing,
+    metadataOnly: {
+      saved: selected.includes("saved") ? analysis.saved.length : 0,
+      likes: selected.includes("likes") ? analysis.likes.length : 0,
+    },
+    warnings: [...analysis.warnings],
+  };
+}
+
+function archiveMediaExists(uri, rootDir) {
+  if (!uri) return false;
+  const source = resolve(rootDir, String(uri).replace(/^\/+/, ""));
+  return source.startsWith(resolve(rootDir) + sep) && existsSync(source) && statSync(source).isFile();
 }
 
 function normalizeSelected(select) {
