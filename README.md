@@ -2,7 +2,17 @@
 
 Your private, searchable Instagram memory. Import your Instagram archive, find old posts and conversations, organize Saved ideas, and build visual boards—all on your own computer.
 
-**Website:** [gramclaw.website](https://gramclaw.website)
+**[Visit the website](https://gramclaw.website/)** · **[Try the showcase](https://gramclaw.website/#demo)**
+
+## See it
+
+**Find a saved image from the way you remember it.** Gramclaw searches captions, OCR, objects, colors, time, and Saved context on your machine.
+
+![Gramclaw visual search finding wooden kitchens from a natural-language query](public/demo-search.jpg)
+
+**Turn recovered references into a working board.** Arrange posts with notes, then export the result as an image or PDF.
+
+![Gramclaw material study board with three saved visual references](public/demo-boards.jpg)
 
 ## Install
 

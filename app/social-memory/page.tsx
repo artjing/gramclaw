@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { SocialMemorySite } from "./SocialMemorySite";
 
 export const metadata: Metadata = {
-  title: "Memory Layer — Your life across the internet, remembered",
+  title: "Trace Garden — Social Memory for Creators",
   description:
-    "A private memory layer that turns your scattered social history into searchable context, creative references, and useful personal agents.",
+    "Turn your social archive into searchable memory and new creative work with a private, source-aware creative agent.",
 };
 
 export default function MemoryConceptPage() {

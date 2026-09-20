@@ -154,7 +154,7 @@ const previewNav: { label: PreviewTab; Icon: LucideIcon }[] = [
 
 const githubUrl = "https://github.com/artjing/gramclaw";
 const publicDemoUrl =
-  "https://gramclaw-instagram-memory.jingjing768.chatgpt.site/#demo";
+  "https://gramclaw.website/#demo";
 
 const commandMatrix: { title: string; detail: string; Icon: LucideIcon }[] = [
   { title: "Archive", detail: "import · find · restore", Icon: FileArchive },
