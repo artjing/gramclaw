@@ -568,13 +568,13 @@ export function GramclawSite() {
             automatically, and build exportable moodboards.
           </p>
           <div className="hero-actions">
-            <a className="button-primary" href="#demo">
-              <Sparkles size={17} />
-              Try the public demo
-              <span>No login · sample data</span>
+            <a className="button-primary" href="#quickstart">
+              <TerminalSquare size={17} />
+              Install Gramclaw
+              <span>Free · open source</span>
             </a>
-            <a className="button-secondary" href="/downloads/gramclaw-1.1.0.tgz" download>
-              <Download size={16} /> Download v1.1
+            <a className="button-secondary" href="#demo">
+              <Sparkles size={16} /> Try the demo
             </a>
           </div>
           <div className="hero-proof">
@@ -1059,10 +1059,7 @@ export function GramclawSite() {
           <span>g</span>
           <strong>gramclaw</strong>
         </div>
-        <p>
-          Inspired by Birdclaw’s local-first model. Built for Instagram’s native
-          objects and archives.
-        </p>
+        <p>Open-source Instagram memory, stored on your own machine.</p>
         <div>
           <a href="#top">Top</a>
           <a href={publicDemoUrl} target="_blank" rel="noreferrer">

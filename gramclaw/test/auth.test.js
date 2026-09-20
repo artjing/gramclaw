@@ -1014,13 +1014,14 @@ test("onboarding markup implements the required accessible states and secret-cle
     "Use username and password instead",
     "Open Instagram",
     "I’ve signed in — continue",
-    "a Gramclaw login window opens",
+    "first launch may take up to a minute",
     "I've approved it — continue",
     "Append 30 recent posts",
     "Session saved securely · password not saved.",
     "Direct sign-in uses Instagram's unofficial private API.",
     "Finishing connection…",
-    "Looking for your Instagram session…",
+    "Opening Instagram…",
+    "first launch may take up to a minute",
     "Choose your ZIP",
   ]) {
     assert.match(app, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));

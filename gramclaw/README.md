@@ -2,8 +2,6 @@
 
 Gramclaw is a local-first Instagram workspace: data-export import, cached live reads, full-text search, relationship history, DM triage, media preservation, Git-friendly backups, scriptable JSON, and a local web app.
 
-It is inspired by the local-first architecture of Birdclaw, translated to Instagram’s native objects: posts, carousels, reels, stories, comments, saves, likes, followers/following, and direct messages.
-
 ## How to use it
 
 Node.js 22.13 or newer is required.

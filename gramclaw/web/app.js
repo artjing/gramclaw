@@ -406,7 +406,7 @@ function authStateCard(ui) {
         <p>Sign in in the Gramclaw login window. 2FA stays on Instagram’s official page. Everyday Chrome tabs cannot be read.</p>
       </div>
       <ol class="auth-steps">
-        <li>Tap Open Instagram — a Gramclaw login window opens</li>
+        <li>Tap Open Instagram — first launch may take up to a minute while macOS prepares the window</li>
         <li>Sign in there, including any code or approval Instagram asks for</li>
         <li>That window can close after sign-in; Gramclaw connects automatically</li>
       </ol>
@@ -447,9 +447,9 @@ function authStateCard(ui) {
     return `
       <div class="auth-progress" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="auth-card-head centered">
-        <span class="auth-step">Checking browser</span>
-        <h2 tabindex="-1">Looking for your Instagram session…</h2>
-        <p>Waiting for the Gramclaw login window. Finish sign-in there; 2FA stays on Instagram’s page.</p>
+        <span class="auth-step">Preparing secure login</span>
+        <h2 tabindex="-1">Opening Instagram…</h2>
+        <p>The first launch may take up to a minute while macOS prepares the window. When it opens, finish sign-in there; 2FA stays on Instagram’s page.</p>
       </div>`;
   }
   if (ui.state === "preparing_runtime" || ui.state === "signing_in") {
