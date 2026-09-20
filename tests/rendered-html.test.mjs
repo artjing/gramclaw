@@ -57,3 +57,13 @@ test("ships metadata and installable release artifacts", async () => {
   assert.equal(socialCard, undefined);
   assert.equal(favicon, undefined);
 });
+
+test("server-renders the Social Memory concept page", async () => {
+  const response = await render("/social-memory");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Your life across the internet/);
+  assert.match(html, /Find what you remember/);
+  assert.match(html, /Private by default/);
+  assert.match(html, /From scattered saves/);
+});

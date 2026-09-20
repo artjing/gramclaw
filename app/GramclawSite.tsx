@@ -528,6 +528,9 @@ export function GramclawSite() {
           <a href="#faq" onClick={() => setMenuOpen(false)}>
             FAQ
           </a>
+          <a href="/social-memory" onClick={() => setMenuOpen(false)}>
+            Social Memory
+          </a>
         </nav>
         <div className="nav-actions">
           <button className="theme-button" onClick={toggleTheme} aria-label="Toggle color theme">
