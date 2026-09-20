@@ -44,3 +44,5 @@ next-env.d.ts
 /outputs/
 /work/
 /gramclaw/.smoke-home/
+.vite/
+/pages-dist/
