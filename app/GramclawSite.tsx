@@ -472,15 +472,13 @@ function DemoLab() {
 
 export function GramclawSite() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   const [activeCommand, setActiveCommand] = useState(commandGroups[0]);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("gramclaw-site-theme");
-    const shouldDark =
-      stored === "dark" ||
-      (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const shouldDark = stored !== "light";
     const frame = window.requestAnimationFrame(() => setDark(shouldDark));
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -502,7 +500,7 @@ export function GramclawSite() {
   }
 
   return (
-    <main className="site">
+    <main className="site" data-theme={dark ? "dark" : "light"}>
       <header className="site-nav">
         <a className="site-logo" href="#top" aria-label="Gramclaw home">
           <span>g</span>

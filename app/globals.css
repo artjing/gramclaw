@@ -25,6 +25,17 @@
   --shadow-large: 0 34px 90px rgba(0, 0, 0, 0.42);
 }
 
+.site[data-theme="dark"] {
+  --site-bg: #11120f;
+  --site-panel: #1b1c18;
+  --site-panel-2: #25261f;
+  --site-ink: #f1efe8;
+  --site-muted: #aaa99f;
+  --site-line: #37382f;
+  --shadow-large: 0 34px 90px rgba(0, 0, 0, 0.42);
+  background: var(--site-bg);
+}
+
 * {
   box-sizing: border-box;
 }
