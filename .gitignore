@@ -46,3 +46,5 @@ next-env.d.ts
 /gramclaw/.smoke-home/
 .vite/
 /pages-dist/
+/.tools/
+/.ghconfig/
