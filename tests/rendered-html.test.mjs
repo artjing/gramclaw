@@ -59,7 +59,7 @@ test("ships metadata and installable release artifacts", async () => {
 });
 
 test("server-renders the Social Memory concept page", async () => {
-  const response = await render("/social-memory");
+  const response = await render("/memory");
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Your life across the internet/);

@@ -528,8 +528,8 @@ export function GramclawSite() {
           <a href="#faq" onClick={() => setMenuOpen(false)}>
             FAQ
           </a>
-          <a href="/social-memory" onClick={() => setMenuOpen(false)}>
-            Social Memory
+          <a href="/memory" onClick={() => setMenuOpen(false)}>
+            Memory concept
           </a>
         </nav>
         <div className="nav-actions">

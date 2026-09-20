@@ -54,7 +54,7 @@ export function SocialMemorySite() {
     <main className="memory-site">
       <header className="memory-nav">
         <a href="/" className="memory-back"><ChevronLeft size={15} /> Gramclaw</a>
-        <a href="#top" className="memory-wordmark"><span>sm</span> Social Memory <em>concept</em></a>
+        <a href="#top" className="memory-wordmark"><span>ml</span> Memory Layer <em>working concept</em></a>
         <a href="#product" className="memory-nav-cta">Explore the product <ArrowRight size={14} /></a>
       </header>
 
@@ -68,7 +68,7 @@ export function SocialMemorySite() {
 
         <div className="memory-workspace" id="product">
           <aside>
-            <div className="memory-logo"><span>sm</span><strong>Memory</strong></div>
+            <div className="memory-logo"><span>ml</span><strong>Memory Layer</strong></div>
             <nav>
               <a className="active"><BrainCircuit size={15} /> Recall</a>
               <a><Sparkles size={15} /> Taste map</a>
@@ -109,7 +109,7 @@ export function SocialMemorySite() {
         <ol><li><b>01</b><strong>Collect</strong><span>Official exports, browser saves, and user-connected sources</span></li><li><b>02</b><strong>Understand</strong><span>Text, visuals, audio, people, topics, and relationships</span></li><li><b>03</b><strong>Act</strong><span>Recall, organize, recommend, draft, and create</span></li></ol>
       </section>
 
-      <footer className="memory-footer"><a href="/">gramclaw.website</a><p>Social Memory is a product concept being developed from Gramclaw’s local-first foundation.</p><a href="#top">Back to top ↑</a></footer>
+      <footer className="memory-footer"><a href="/">gramclaw.website</a><p>Working concept · name, interface, and scope are still being designed.</p><a href="#top">Back to top ↑</a></footer>
     </main>
   );
 }
